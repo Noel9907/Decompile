@@ -7,10 +7,29 @@ Status legend:
 - 🔨 implemented: code exists, not yet tested
 - 🧪 tested: automated or scripted checks pass
 - ✅ verified: acceptance criteria passed on real inputs **and** approved by the project owner
+- ⛔ blocked
 
 Priority: **P0** submission fails without it · **P1** makes it strong · **P2** nice to have.
 
 Deadline: submission due **Nov 4, 21:00 ET**. Internal: feature freeze Nov 4 12:00 ET, submit by 18:00 ET.
+
+## Labelling rules (binding)
+
+- **SYNTHETIC** data (videos we generate) is always labelled as such in file names (`synthetic_*`), manifests (`"synthetic": true`) and any UI or plot. Synthetic results are **unit-test evidence only**, never presented as real-world results.
+- The **classical tracker** (Track A) is a real, separate perception backend. It is never called "SAM" and never presented as a Meta integration.
+- **No mocked Meta responses.** Track B code is only marked 🧪/✅ after real API calls whose raw responses are saved to disk. Interfaces may be defined ahead of time, but an interface without a real backend is reported as "not integrated".
+- **Synthetic-generator independence:** the generator integrates physics by brute-force fine time-stepping (`decompile/synth/`). The inference simulator (`decompile/physics/`) is event-driven and analytic, so fitting is never tested against an identical copy of the generator's own model.
+
+## Shared interfaces (Track A defines them, Track B plugs in)
+
+Each interface is created in the task that first needs it, not ahead of time.
+
+| Interface | Track A implementation | Track B implementation |
+|---|---|---|
+| `Tracker.track(video, prompts) → TrackSet` (per-frame timestamp, object ID, box, centroid, mask area) | `ClassicalTracker` (threshold + contours) | `Sam31Tracker` |
+| Scene reader (object names, size and restitution priors) | user-supplied JSON (labelled as manual input) | Muse Spark |
+| Residual critic (propose model changes) | none; fixed candidate list scored by numbers | Muse Spark |
+| Appearance asset (sprite) | crop from an observed frame | Muse Image |
 
 ---
 
@@ -18,110 +37,115 @@ Deadline: submission due **Nov 4, 21:00 ET**. Internal: feature freeze Nov 4 12:
 
 | ID | Task | Depends | Pri | Status |
 |---|---|---|---|---|
-| M0.1 | Repo setup, ROADMAP, environment check (Python, ffmpeg/ffprobe, pinned deps) | none | P0 | 🧪 |
-| M0.2 | Run-directory convention (`runs/<id>/manifest.json`), file hashing helper, test | M0.1 | P0 | ⬜ |
+| M0.1 | Repo setup, ROADMAP, environment check | none | P0 | ✅ |
 
-## Phase 1: Perception and experimental protocol (M1)
+## TRACK A: API-independent development
 
-| ID | Task | Depends | Pri | Status |
-|---|---|---|---|---|
-| M1.1 | Meta API auth: minimal text call to `muse-spark-1.3` | M0.1 | P0 | ⬜ |
-| M1.2 | SAM 3.1 raw call on one short mp4, raw stream saved | M1.1 | P0 | ⬜ |
-| M1.3 | SAM parsing → per-frame table; frames returned vs frames sent | M1.2 | P0 | ⬜ |
-| M1.4 | Overlay video, trajectory plot, centroid jitter | M1.3 | P0 | ⬜ |
-| M1.5 | Muse Spark video call (Files API upload) | M1.1 | P0 | ⬜ |
-| M1.6 | Muse Spark structured output on video | M1.5 | P0 | ⬜ |
-| M1.7 | Muse Image smoke test | M1.1 | P2 | ⬜ |
-| M1.8 | Ingest: per-frame timestamps, variable-frame-rate/slow-motion flags, SHA-256 | M0.2 | P0 | ⬜ |
-| M1.9 | Split by time → `observed.mp4` + `vault/withheld.mp4`; frame conservation test | M1.8 | P0 | ⬜ |
-| M1.10 | Leak guards (vault isolation, SAM forward-only on observed clip) | M1.9, M1.3 | P0 | ⬜ |
-| M1.11 | Spark → SAM chain; M1 findings and go/no-go | M1.6, M1.10 | P0 | ⬜ |
-
-## Phase 2: Physics core (M2). No API dependency
+### A-I. Video input layer
 
 | ID | Task | Depends | Pri | Status |
 |---|---|---|---|---|
-| M2.1 | Scene IR dataclasses (Body, Gravity, PlaneContact, Pendulum, LinearDrag) | M0.1 | P0 | ⬜ |
-| M2.2 | Event-driven simulator: ballistic + plane bounce, analytic impacts | M2.1 | P0 | ⬜ |
-| M2.3 | Pendulum + damping simulator, analytic tests | M2.1 | P0 | ⬜ |
-| M2.4 | Synthetic trajectory generator (unit-test data only) | M2.2 | P0 | ⬜ |
-| M2.5 | Event-segmented initial estimates (bounces, g, e) | M2.4 | P0 | ⬜ |
-| M2.6 | Global multiple-shooting fit, robust loss, parameter-recovery tests | M2.5 | P0 | ⬜ |
-| M2.7 | Model selection: nested holdout + BIC | M2.6, M2.3 | P0 | ⬜ |
-| M2.8 | Compiler: IR → standalone readable program, equivalence test | M2.2 | P0 | ⬜ |
-| M2.9 | Parameter uncertainty → confidence intervals, prediction bands | M2.6 | P1 | ⬜ |
+| A1 | Video ingest and validation: ffprobe metadata, SHA-256, full decode check, explicit frame-count reconciliation, accept/reject rules, CLI | M0.1 | P0 | ✅ |
+| A2 | Frame extraction: ffmpeg decodes **every** frame (passthrough, no duplication or drop), count matches ffprobe | A1 | P0 | ⬜ |
+| A3 | Frame timestamps and metadata: per-frame presentation timestamps, variable-frame-rate detection, slow-motion capture/playback mismatch flag | A2 | P0 | ⬜ |
 
-## Phase 3: First real predictive experiment (M3)
+### A-II. Synthetic ground truth (labelled SYNTHETIC)
 
 | ID | Task | Depends | Pri | Status |
 |---|---|---|---|---|
-| M3.1 | Measurement: centroid, radius, timestamps, gaps | M1.4 | P0 | ⬜ |
-| M3.2 | Calibration px→m; plane-of-motion check | M3.1 | P0 | ⬜ |
-| M3.3 | Floor geometry from bounce minima | M3.1 | P0 | ⬜ |
-| M3.4 | End-to-end fit on a real observed clip → IR + program | M2.7, M2.8, M3.2, M3.3 | P0 | ⬜ |
-| M3.5 | Commit step: `prediction.json` + SHA-256 before reveal | M3.4, M1.10 | P0 | ⬜ |
-| M3.6 | Evaluator (only vault reader): hash check, ground truth, metrics vs horizon | M3.5 | P0 | ⬜ |
-| M3.7 | Baselines: constant velocity, constant acceleration, polynomial | M3.6 | P0 | ⬜ |
-| M3.8 | First experiment recorded here with plots | M3.7 | P0 | ⬜ |
+| A4 | Ground-truth physics generator: ball under gravity, bouncing on a floor with restitution e, optional air drag; brute-force fine stepping; analytic sanity tests | M0.1 | P0 | ⬜ |
+| A5 | Synthetic video renderer: GT trajectory → mp4 at a set fps and px/m scale, optional blur and noise; writes a `ground_truth.json` manifest | A4, A1 | P0 | ⬜ |
 
-## Phase 4: Muse Spark as the scientist (M4)
+### A-III. Perception (classical backend)
 
 | ID | Task | Depends | Pri | Status |
 |---|---|---|---|---|
-| M4.1 | Scene reading → SAM prompts + labelled priors | M1.11, M3.4 | P0 | ⬜ |
-| M4.2 | Residual critique → structured model change | M2.7 | P0 | ⬜ |
-| M4.3 | Repair loop inside the nested holdout, accept/reject log | M4.2 | P0 | ⬜ |
-| M4.4 | Spark-as-oracle baseline | M3.6 | P0 | ⬜ |
-| M4.5 | Ablation: full vs no-Spark vs Spark-only | M4.3, M4.4 | P0 | ⬜ |
-| M4.6 | Spark-written commented program, numerical equivalence test | M2.8 | P1 | ⬜ |
+| A6 | `Tracker` interface + `TrackSet` data structure + `ClassicalTracker` on synthetic videos; centroid error vs GT | A3, A5 | P0 | ⬜ |
 
-## Phase 5: Rendering and reveal (M5)
+### A-IV. Experimental protocol
 
 | ID | Task | Depends | Pri | Status |
 |---|---|---|---|---|
-| M5.1 | Background plate from observed frames only | M1.9, M1.3 | P1 | ⬜ |
-| M5.2 | Sprite + deterministic compositor → predicted video | M5.1, M3.5 | P1 | ⬜ |
-| M5.3 | Reveal video: side-by-side + overlay + error trail | M5.2 (or fallback), M3.6 | P0 | ⬜ |
+| A7 | Run directory + split by time → `observed.mp4` and `vault/withheld.mp4`; frame-conservation test | A3 | P0 | ⬜ |
+| A8 | Leak guards: inference code cannot reach the vault (static test + runtime check) | A7 | P0 | ⬜ |
 
-## Phase 6: Generalisation (M6)
-
-| ID | Task | Depends | Pri | Status |
-|---|---|---|---|---|
-| M6.1 | Real pendulum: pivot, length, damping | M3.4, M2.3 | P0 | ⬜ |
-| M6.2 | Automatic model-structure selection | M6.1, M4.3 | P1 | ⬜ |
-| M6.3 | Learning curve over split ratios {50, 60, 70, 80}% (set in advance) | M3.7 | P0 | ⬜ |
-| M6.4 | Transfer test: ball video A → ball video B | M3.7 | P1 | ⬜ |
-| M6.5 | Frozen test-set run, once, results recorded unedited | all above | P0 | ⬜ |
-
-## Phase 7: Counterfactuals (M7)
+### A-V. Physics inference
 
 | ID | Task | Depends | Pri | Status |
 |---|---|---|---|---|
-| M7.1 | Plain-English edit → parameter change → re-simulate | M3.4 | P1 | ⬜ |
-| M7.2 | Muse Image sprite swap | M5.2, M1.7 | P2 | ⬜ |
+| A9 | Scene IR (Body, Gravity, PlaneContact, LinearDrag) + event-driven deterministic simulator, analytic tests | M0.1 | P0 | ⬜ |
+| A10 | Initial estimates: bounce detection, per-flight parabola fits → g (px/s²), e, floor height | A6, A9 | P0 | ⬜ |
+| A11 | Global fit through the simulator (multiple shooting, robust loss); parameter-recovery tests across noise levels | A10 | P0 | ⬜ |
+| A12 | Calibration px→m from known object size; recovered g in m/s² vs 9.81 | A11 | P0 | ⬜ |
 
-## Phase 8: Product and submission (M8)
+### A-VI. Prediction and evaluation
 
 | ID | Task | Depends | Pri | Status |
 |---|---|---|---|---|
-| M8.1 | FastAPI backend serving run directories | M0.2 | P0 | ⬜ |
-| M8.2a | UI: Observe / Discover | M8.1 | P0 | ⬜ |
-| M8.2b | UI: Predict / Reveal | M8.2a | P0 | ⬜ |
-| M8.2c | UI: Challenge (counterfactuals) | M8.2b, M7.1 | P1 | ⬜ |
-| M8.3 | Demo script and recording | M6.5 | P0 | ⬜ |
-| M8.4 | README, technical write-up, submission | M6.5 | P0 | ⬜ |
+| A13 | Forward prediction + commit step: `prediction.json` and its SHA-256 written before reveal | A11, A8 | P0 | ⬜ |
+| A14 | Evaluator (sole vault reader): hash check, error vs horizon, bounce-timing error, apex error | A13 | P0 | ⬜ |
+| A15 | Baselines: constant velocity, constant acceleration (last N), polynomial | A14 | P0 | ⬜ |
+| A16 | First full synthetic experiment recorded here (labelled SYNTHETIC) | A15 | P0 | ⬜ |
 
-## Phase 9: Stretch
+### A-VII. Reconstruction and program output
 
-Two-body collision with mass-ratio inference; uncertainty calibration plot.
+| ID | Task | Depends | Pri | Status |
+|---|---|---|---|---|
+| A17 | Compiler: IR → standalone readable Python scene program; output matches the simulator to within 1e-9 | A9 | P0 | ⬜ |
+| A18 | Reconstruction render: background plate (observed frames only) + sprite compositor | A7, A6 | P1 | ⬜ |
+| A19 | Reveal video: prediction vs reality overlay + error trail | A14, A18 (or plot-only fallback) | P0 | ⬜ |
+
+### A-VIII. Generalisation and science
+
+| ID | Task | Depends | Pri | Status |
+|---|---|---|---|---|
+| A20 | Model selection: nested holdout inside the observed portion + BIC (drag vs no-drag) | A11 | P0 | ⬜ |
+| A21 | Parameter uncertainty → prediction bands | A11 | P1 | ⬜ |
+| A22 | Pendulum: generator, IR, simulator, fit (pivot, L, damping) | A9, A20 | P0 | ⬜ |
+| A23 | Learning curve over split ratios {50, 60, 70, 80}% (set in advance) | A15 | P0 | ⬜ |
+| A24 | Real-footage pipeline on dev set (classical tracker) | A16, D2 | P0 | ⬜ |
+| A25 | Transfer test: ball video A → ball video B | A24 | P1 | ⬜ |
+| A26 | Frozen test-set run, once, results recorded unedited | all P0 above, D3 | P0 | ⬜ |
+| A27 | Counterfactual parameter edits ("moon gravity"), re-simulate | A17 | P1 | ⬜ |
+
+### A-IX. Product
+
+| ID | Task | Depends | Pri | Status |
+|---|---|---|---|---|
+| A28 | FastAPI backend serving run directories | A7 | P0 | ⬜ |
+| A29a | UI: Observe / Discover | A28 | P0 | ⬜ |
+| A29b | UI: Predict / Reveal | A29a | P0 | ⬜ |
+| A29c | UI: Challenge (counterfactuals) | A29b, A27 | P1 | ⬜ |
+| A30 | Demo script, recording, README, write-up, submission | A26 | P0 | ⬜ |
+
+## TRACK B: Meta API integrations (⛔ blocked: no API key yet)
+
+Every B task saves raw API responses to disk as evidence. No mocks count as integration.
+
+| ID | Task | Depends | Pri | Status |
+|---|---|---|---|---|
+| B1 | Auth: minimal text call to `muse-spark-1.3`; record region/account errors verbatim | API key | P0 | ⛔ |
+| B2 | SAM 3.1 raw call on one short mp4 (Files API upload, forward propagation), raw stream saved | B1 | P0 | ⛔ |
+| B3 | SAM parsing (`meta_sam_parser`) → `TrackSet`; frames returned vs sent | B2, A6 | P0 | ⛔ |
+| B4 | `Sam31Tracker` vs `ClassicalTracker` on synthetic (vs GT) and real footage | B3 | P0 | ⛔ |
+| B5 | Muse Spark video call (Files API) | B1 | P0 | ⛔ |
+| B6 | Muse Spark structured output on video: object noun phrases, identity, size prior | B5 | P0 | ⛔ |
+| B7 | Spark → SAM chain (Spark's noun phrases drive SAM) | B6, B3 | P0 | ⛔ |
+| B8 | Spark residual critique inside the nested-holdout repair loop | B6, A20 | P0 | ⛔ |
+| B9 | Spark-as-oracle baseline (direct coordinate prediction) | B5, A14 | P0 | ⛔ |
+| B10 | Ablation: full vs no-Spark vs Spark-only | B8, B9 | P0 | ⛔ |
+| B11 | Plain-English edit → parameter change via Spark | B6, A27 | P1 | ⛔ |
+| B12 | Muse Image smoke test, then sprite swap ("orange") | B1, A18 | P2 | ⛔ |
+
+**Fallback if the key arrives late or the API is unusable:** self-host SAM 3.1 weights (`facebookresearch/sam3`) on Modal credits. Until then the classical tracker carries the pipeline, clearly labelled.
 
 ## Track D: data collection (project owner)
 
 | ID | Task | Needed by | Status |
 |---|---|---|---|
-| D1 | One quick test clip of a bouncing ball | M1.2 | ⬜ |
+| D1 | One quick test clip of a bouncing ball | A24 / B2 | ⬜ |
 | D2 | Dev set: 2 ball + 1 pendulum, with diameter and length measured | Nov 2 AM ET | ⬜ |
-| D3 | Test set (sealed until M6.5): 2–3 ball + 2 pendulum | Nov 3 | ⬜ |
+| D3 | Test set (sealed until A26): 2–3 ball + 2 pendulum | Nov 3 | ⬜ |
 
 ---
 
@@ -129,9 +153,23 @@ Two-body collision with mass-ratio inference; uncertainty calibration plot.
 
 Only results that were actually run go here, with date, command and outcome.
 
-### M0.1: Repo setup and environment check (2026-11-01)
-- Command: `.venv\Scripts\python tools\check_env.py`
+### M0.1: Repo setup and environment check (2026-11-01) ✅
+- Command: `.venv\Scripts\python tools\check_env.py` → all required checks PASS, exit 0.
 - Python 3.13.7 (venv), ffmpeg 7.1.1 and ffprobe 7.1.1 (gyan.dev essentials build), git 2.44.0.
-- All 8 pinned packages import at their pinned versions.
-- Note: the global pip config lists an unreachable extra index (`pypi.ngc.nvidia.com`). Installs still succeed but print retry warnings.
-- Status: 🧪 tested, waiting for owner verification.
+- All 8 pinned packages import at their pinned versions; a fresh venv installs from `requirements.txt` and passes.
+- Negative test: with ffmpeg removed from PATH the check reports 2 FAIL lines and exits 1.
+- `.env` absent (no API key yet), reported as WARN by design.
+- Note: the global pip config lists an unreachable extra index (`pypi.ngc.nvidia.com`). Installs succeed but print retry warnings.
+- Committed by owner as `ba75492` and pushed to `github.com/Noel9907/Decompile`.
+
+### A1: Video ingest and validation (2026-11-01) ✅
+- Approved by owner 2026-11-01 based on the test results and acceptance evidence below.
+- Files: `decompile/ingest.py`, `tests/test_ingest.py`, `decompile/__init__.py`.
+- Command: `.venv\Scripts\python -m pytest tests/test_ingest.py -v` → **16 passed** (2.15 s).
+- All test media are SYNTHETIC fixtures (ffmpeg `testsrc` / `sine`), generated in pytest temp dirs.
+- Decodability: the first video stream is fully decoded to a null sink (`-fps_mode passthrough`). The decoded count is the only authoritative frame count; the container's `nb_frames` is kept for comparison only.
+- Observed: a faststart mp4 truncated to 60% of its bytes still passes ffprobe (reports 60 frames), but only **17** decode, with `partial file` / `Invalid NAL unit size` errors. It is rejected, status `mismatch`.
+- Observed: webm (VP9) reports no `nb_frames` → status `reported_missing`, decoded 60, accepted with a warning.
+- Rejected with specific reasons: text renamed .mp4, 1 KB truncated mp4, audio-only mp4, 0.2 s clip, 32×32 video, h264-in-mkv (unsupported container).
+- Known limitation: decoding is O(video length). Fine for the short clips we target; there is a 300 s timeout.
+- Not yet tested on real phone footage (no D1 clip yet).
