@@ -1,0 +1,119 @@
+Meta Global AI Developer Hackathon
+Remote
+Oct 26, 10:30 PM – Nov 5, 7:30 AM (GMT+5:30)
+Come and build the future of superintelligence.
+
+Ten days, access to our newest models and $1M in prizes. The Meta Global AI Developer Hackathon is virtual, worldwide and free to enter if selected.
+
+About the Hackathon
+Apply to spend ten days building with Meta's newest models. Use the Muse Spark series, Muse Wonder, Muse Image and SAM 3.1 through Meta Model API, run Meta open weights models, and code faster with Muse Code coding agent.
+
+Bring a problem you know firsthand, or an idea that feels out of reach. Build it with the models, learn from the Meta team and partners in live workshops, and compete for a share in the $1,000,000 cash prize pool across two tracks: one for indie developers and one for startups.
+
+Partners
+We have an amazing set of inference partners supporting the event:
+
+Baseten is offering $100 in credits and 2M TPM rate limits to select participants to use Meta's open-weights models.
+
+Modal is offering $100 in credits to select participants to use Meta's open-weights models through Endpoints in addition to their serverless GPUs, sandboxes, and tools for LLM training.
+
+Fireworks is offering $100 in credits to select participants to use Meta's open-weight models along with a workshop from Sinan Ozdemir
+
+Participant Tracks
+$1,000,000 in total prizes. Every project enters one track.
+
+Indie developer track: For individual builders and students. Judged on creativity, technical ambition, and whether it works.
+
+Startup track: For teams and founders building a real product. Judged on technical execution and whether it holds up in production.
+
+Project Themes
+Regardless of the track you choose, we’re looking for projects in two main themes:
+
+Build for Your World. Bring Meta's models into your domain. Solve a problem you know firsthand, free up time and mental space, and make something possible that wasn't before.
+
+Push the Frontier. Use Meta's models to tackle challenges in software, robotics, manufacturing, energy, materials and beyond. Give a machine a new capability, accelerate a scientific experiment, or unlock a better way to understand and control a physical system. Show us what becomes possible when these models meet the real world.
+
+Apply Now
+Apply to participate. Participation is limited to a maximum of 20,000 accepted applicants. Applications will be evaluated against the selection criteria below on a rolling basis. No further applications will be accepted or evaluated once the cap is reached. Organizers reserve the right, in their sole discretion, to close the application portal and end the application period immediately once the participant cap is satisfied, even if such date is prior to the posted Application Deadline. Early application is encouraged. 
+
+Key Dates
+Oct 13, 9:00 AM ET: Applications open. Applications are reviewed, and applicants notified, on a rolling basis.
+
+Oct 25, 11:59 PM ET: Applications Deadline, or earlier if all 20,000 spots are filled.
+
+Oct 26, 9:00 AM ET: Applicant approval notification sent by this time
+
+Oct 26: Hackathon begins with kickoff livestream
+
+Oct 27 – Nov 4: Live workshops from Meta and partners, plus office hours on Discord
+
+Nov 4: Project submissions due by 9:00 PM ET
+
+Nov 4 – Nov 8: Judging
+
+Nov 9: Closing ceremony - live finals and winners announced
+
+*Dates may be subject to change at Meta’s sole discretion. Any change will be posted on this page.
+
+How Applications are Reviewed
+We aim for a mix of technical backgrounds and domains across participants. Applicants should best showcase their technical skills in the application form. 
+
+We review every application against two criteria, using only your answers on the application form:
+
+Your project idea: how clear and feasible your proposed project is, and how well it fits one of the two project themes.
+
+Your technical skill: the technical skill shown in the AI project you describe, including what you built and the techniques you used. Links to your GitHub, LinkedIn or a shipped product help us verify your experience and skill but are not required.
+
+Both criteria are weighted equally. Applications are evaluated on a rolling basis. Eligible applications meeting minimum scoring cut-offs will be accepted automatically, up to the first 20,000 acceptances. Eligible applications that do not meet the minimum scoring cut-offs will be accepted based on score received, if space allows.  Answers to questions 13 to 16 help us improve our developer programs and are not used in selection.
+
+Duplicate applications, false identity information or spam will be disqualified at Sponsor's sole discretion.
+
+Participation is limited to up to 20,000 selected applicants. Applications are reviewed on a rolling basis as they're received. Once spots are filled, the application will close.
+
+Duplicate applications, false identity information or spam will be disqualified at Sponsor’s sole discretion. 
+
+Open worldwide, except in countries where local law prohibits participation or the receipt of an award. Void where prohibited by law. Individuals and/or Organizations that are (i) the target of any trade sanctions or export control restrictions administered or enforced by the U.S., EU, United Nations, or UK; (ii) acting on behalf of anyone else who is the target of such trade sanctions or export control restrictions; or (iii) organized or located in Belarus, China, Russia, Ukraine, Syria, or any country or region that is the target of comprehensive economic or financial sanctions (which are the Crimea, Donetsk, and Luhansk regions of Ukraine, Cuba, North Korea, Iran) are not eligible to participate.  
+
+Employees, contractors, and interns of Meta and Cerebral Valley,government-affiliated individuals, and members of their immediate families (defined for these purposes as including spouse, domestic partner, parents, legal guardian, legal ward, children, and siblings and each of their respective spouses) and individuals living in the same household as such individuals, are not eligible.
+View Application Overview and Event Waiver
+
+Official Rules will be published before the Hackathon begins on October 26, 2026 and must be accepted by the selected participants.
+
+Show Less
+Text Blasts
+Announcement
+5d
+Kickoff starts in 20 minutes! Join us at 12:00 PM EST (9:00 AM PT) here: https://cerebralvalley.ai/e/meta-ai-developer-hackathon/live
+
+Cerebral Valley
+Cerebral Valley
+5d
+Claim your $150 in Meta Model API credits
+
+As an accepted participant, you get $150 in Meta Model API credits.
+To claim: 
+
+Apply for credits through this form.
+
+Once the form is submitted, credits will be distributed in batches. Check the ‘Billing’ page to ensure free credits are applied. In order to use your credits & make an API call, a credit card must be applied to your account. 
+
+You can set up a “Spend Limit” notification on the “Billing” page if you do not want to spend beyond the $150 credit granted. 
+
+Claim by Wed Nov 4 at 9:00 PM Eastern Time. Each participant - solo, team member, or startup entrant - must claim their own credits individually. Credits cannot be claimed on someone else’s behalf.
+
+Cerebral Valley
+Cerebral Valley
+5d
+Hey there!
+
+Welcome to the Meta Global AI Developer Hackathon. We're excited to see what you build with us!
+
+A few action items:
+
+Please view all event details, including problem statements, and schedule at https://cerebralvalley.ai/e/meta-ai-developer-hackathon/details
+
+Join the Hackathon Discord Server (follow the instructions to join in the event details link) for the latest updates: https://cerebralvalley.ai/e/meta-ai-developer-hackathon/discord
+
+Kickoff is at 12PM EST (9AM PT) today, October 26th, streamed live on the Cerebral Valley Platform. The livestream link will be made public closer to showtime.
+
+See you there!

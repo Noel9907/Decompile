@@ -1,0 +1,16 @@
+# Environment and secrets
+.venv/
+.env
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Experiment data: never commit footage, run outputs or the withheld-frame vault
+runs/
+vault/
+data/
+*.mp4
+*.mov
+*.avi

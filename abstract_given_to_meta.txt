@@ -1,0 +1,7 @@
+I’m building Decompile, a decompiler for real-world video. It turns a short clip into readable, editable source code that re-renders the scene.
+
+Given a video, SAM 3.1 segments and tracks every object across frames. Muse Spark then watches the clip, reads the extracted trajectories, and writes a compact scene program: the objects, the physical laws governing their motion (gravity, bounces, collisions), and their interactions. A deterministic renderer executes the program, and a render-compare-repair loop feeds the reconstruction errors back to Muse Spark so it can debug its own code until the output matches the original footage.
+
+Once a scene is code instead of pixels, new things become possible. You can edit it in plain English (“moon gravity,” “replace the ball with an orange” using Muse Image), play it in reverse, extrapolate beyond the recorded clip, and store it at a fraction of the original size.
+
+For the 10 days, I’ll scope it to static-camera scenes with rigid objects (bouncing, rolling, pendulums, collisions), with procedural geometry as a stretch goal. This fits Push the Frontier: it gives machines an inverse-graphics capability, understanding a physical scene as the program that explains it.
