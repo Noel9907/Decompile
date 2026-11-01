@@ -99,11 +99,14 @@ def decode_video_stream(path: Path) -> tuple[int | None, list[str]]:
 
     Returns (decoded_frame_count, error_lines). -fps_mode passthrough guarantees frames
     are neither duplicated nor dropped, so the count is the true decoded frame count.
+    -enc_time_base demux keeps the input stream's time base on the null output; without it,
+    variable-frame-rate timestamps are rescaled to a coarse 1/fps base and the null muxer
+    logs false "non monotonically increasing dts" errors (found during A2).
     """
     cmd = [
         "ffmpeg", "-nostdin", "-hide_banner", "-nostats", "-v", "error",
         "-i", str(path),
-        "-map", "0:v:0", "-fps_mode", "passthrough",
+        "-map", "0:v:0", "-fps_mode", "passthrough", "-enc_time_base", "demux",
         "-f", "null", "-",
         "-progress", "pipe:1",
     ]

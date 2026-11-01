@@ -49,6 +49,13 @@ def media(tmp_path_factory):
     m["truncated_partial"] = d / "synthetic_truncated_partial.mp4"
     m["truncated_partial"].write_bytes(data[: int(len(data) * 0.6)])
 
+    # Variable frame rate: irregular timestamps (gaps grow quadratically) in a 1/90000 time base.
+    m["vfr"] = make_testsrc(
+        d / "synthetic_vfr.mp4",
+        extra=("-vf", "settb=1/90000,setpts=(N/30+N*N/6000)/TB", "-fps_mode", "passthrough",
+               "-video_track_timescale", "90000"),
+    )
+
     m["audio_only"] = d / "synthetic_audio_only.mp4"
     ffmpeg("-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-c:a", "aac", str(m["audio_only"]))
     return m
@@ -84,6 +91,16 @@ def test_webm_missing_frame_count_uses_decoded(media):
     assert info.frame_count == 60
     assert info.frame_count_status == "reported_missing"
     assert any("does not report a frame count" in w for w in info.warnings)
+    assert validate(info) == []
+
+
+# --- regression (found during A2): VFR video must not be rejected -----------------------
+
+def test_vfr_video_accepted_without_false_decode_errors(media):
+    """The decode check must not report null-muxer timestamp complaints as decode errors."""
+    info = probe_video(media["vfr"])
+    assert info.decode_errors == []
+    assert info.decoded_frame_count == 60
     assert validate(info) == []
 
 
