@@ -20,6 +20,7 @@ PACKAGES = [
     ("cv2", "opencv-python"),
     ("matplotlib", "matplotlib"),
     ("openai", "openai"),
+    ("httpx2", "httpx2"),
     ("meta_sam_parser", "meta-sam-parser"),
     ("dotenv", "python-dotenv"),
     ("pytest", "pytest"),
