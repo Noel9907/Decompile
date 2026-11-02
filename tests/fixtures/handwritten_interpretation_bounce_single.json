@@ -1,0 +1,224 @@
+{
+  "_provenance": "HANDWRITTEN TEST DATA. Written by hand for offline validator tests of decompile.scene_interpretation. This is NOT Muse Spark output and NOT a Meta API response. It interprets tests/fixtures/synthetic_bounce_single.trajectories.json (SYNTHETIC). It is never sent to a model.",
+  "interpretation": {
+    "schema_version": "decompile.scene_interpretation/1",
+    "observed_facts": [
+      {
+        "fact_id": "F1",
+        "object_ids": ["obj_01"],
+        "statement": "y increases on every step from frame 0 to frame 19 (each cited frame has a larger y than the previous cited frame).",
+        "evidence": [
+          {"object_id": "obj_01", "frame_index": 0},
+          {"object_id": "obj_01", "frame_index": 1},
+          {"object_id": "obj_01", "frame_index": 2},
+          {"object_id": "obj_01", "frame_index": 3},
+          {"object_id": "obj_01", "frame_index": 4},
+          {"object_id": "obj_01", "frame_index": 5},
+          {"object_id": "obj_01", "frame_index": 6},
+          {"object_id": "obj_01", "frame_index": 7},
+          {"object_id": "obj_01", "frame_index": 8},
+          {"object_id": "obj_01", "frame_index": 9},
+          {"object_id": "obj_01", "frame_index": 10},
+          {"object_id": "obj_01", "frame_index": 11},
+          {"object_id": "obj_01", "frame_index": 12},
+          {"object_id": "obj_01", "frame_index": 13},
+          {"object_id": "obj_01", "frame_index": 14},
+          {"object_id": "obj_01", "frame_index": 15},
+          {"object_id": "obj_01", "frame_index": 16},
+          {"object_id": "obj_01", "frame_index": 17},
+          {"object_id": "obj_01", "frame_index": 18},
+          {"object_id": "obj_01", "frame_index": 19}
+        ]
+      },
+      {
+        "fact_id": "F2",
+        "object_ids": ["obj_01"],
+        "statement": "During frames 0 to 18 the step in y grows on every step: 1.11 px between frames 0 and 1, rising to 38.89 px between frames 17 and 18.",
+        "evidence": [
+          {"object_id": "obj_01", "frame_index": 0},
+          {"object_id": "obj_01", "frame_index": 1},
+          {"object_id": "obj_01", "frame_index": 2},
+          {"object_id": "obj_01", "frame_index": 3},
+          {"object_id": "obj_01", "frame_index": 4},
+          {"object_id": "obj_01", "frame_index": 5},
+          {"object_id": "obj_01", "frame_index": 6},
+          {"object_id": "obj_01", "frame_index": 7},
+          {"object_id": "obj_01", "frame_index": 8},
+          {"object_id": "obj_01", "frame_index": 9},
+          {"object_id": "obj_01", "frame_index": 10},
+          {"object_id": "obj_01", "frame_index": 11},
+          {"object_id": "obj_01", "frame_index": 12},
+          {"object_id": "obj_01", "frame_index": 13},
+          {"object_id": "obj_01", "frame_index": 14},
+          {"object_id": "obj_01", "frame_index": 15},
+          {"object_id": "obj_01", "frame_index": 16},
+          {"object_id": "obj_01", "frame_index": 17},
+          {"object_id": "obj_01", "frame_index": 18}
+        ]
+      },
+      {
+        "fact_id": "F3",
+        "object_ids": ["obj_01"],
+        "statement": "y decreases on every step from frame 19 to frame 31 and increases on every step from frame 31 to frame 36.",
+        "evidence": [
+          {"object_id": "obj_01", "frame_index": 19},
+          {"object_id": "obj_01", "frame_index": 20},
+          {"object_id": "obj_01", "frame_index": 21},
+          {"object_id": "obj_01", "frame_index": 22},
+          {"object_id": "obj_01", "frame_index": 23},
+          {"object_id": "obj_01", "frame_index": 24},
+          {"object_id": "obj_01", "frame_index": 25},
+          {"object_id": "obj_01", "frame_index": 26},
+          {"object_id": "obj_01", "frame_index": 27},
+          {"object_id": "obj_01", "frame_index": 28},
+          {"object_id": "obj_01", "frame_index": 29},
+          {"object_id": "obj_01", "frame_index": 30},
+          {"object_id": "obj_01", "frame_index": 31},
+          {"object_id": "obj_01", "frame_index": 32},
+          {"object_id": "obj_01", "frame_index": 33},
+          {"object_id": "obj_01", "frame_index": 34},
+          {"object_id": "obj_01", "frame_index": 35},
+          {"object_id": "obj_01", "frame_index": 36}
+        ]
+      },
+      {
+        "fact_id": "F4",
+        "object_ids": ["obj_01"],
+        "statement": "y is 430.0 at frame 18, 435.71 at frame 19 and 409.18 at frame 20, so frame 19 is a local maximum of y, about 44 px above the bottom edge of the 480 px image.",
+        "evidence": [
+          {"object_id": "obj_01", "frame_index": 18},
+          {"object_id": "obj_01", "frame_index": 19},
+          {"object_id": "obj_01", "frame_index": 20}
+        ]
+      },
+      {
+        "fact_id": "F5",
+        "object_ids": ["obj_01"],
+        "statement": "At frames 0, 5, 10, 15, 20, 25, 30 and 35, x is 100.0, 110.0, 120.0, 130.0, 140.0, 150.0, 160.0 and 170.0: it increases by the same 10.00 px between consecutive cited frames.",
+        "evidence": [
+          {"object_id": "obj_01", "frame_index": 0},
+          {"object_id": "obj_01", "frame_index": 5},
+          {"object_id": "obj_01", "frame_index": 10},
+          {"object_id": "obj_01", "frame_index": 15},
+          {"object_id": "obj_01", "frame_index": 20},
+          {"object_id": "obj_01", "frame_index": 25},
+          {"object_id": "obj_01", "frame_index": 30},
+          {"object_id": "obj_01", "frame_index": 35}
+        ]
+      },
+      {
+        "fact_id": "F6",
+        "object_ids": ["obj_01"],
+        "statement": "From frame 19 to frame 36 the smallest y is 264.01 at frame 31, which is larger than the 70.0 at frame 0, so after the reversal the object does not get back to its starting height.",
+        "evidence": [
+          {"object_id": "obj_01", "frame_index": 0},
+          {"object_id": "obj_01", "frame_index": 19},
+          {"object_id": "obj_01", "frame_index": 20},
+          {"object_id": "obj_01", "frame_index": 21},
+          {"object_id": "obj_01", "frame_index": 22},
+          {"object_id": "obj_01", "frame_index": 23},
+          {"object_id": "obj_01", "frame_index": 24},
+          {"object_id": "obj_01", "frame_index": 25},
+          {"object_id": "obj_01", "frame_index": 26},
+          {"object_id": "obj_01", "frame_index": 27},
+          {"object_id": "obj_01", "frame_index": 28},
+          {"object_id": "obj_01", "frame_index": 29},
+          {"object_id": "obj_01", "frame_index": 30},
+          {"object_id": "obj_01", "frame_index": 31},
+          {"object_id": "obj_01", "frame_index": 32},
+          {"object_id": "obj_01", "frame_index": 33},
+          {"object_id": "obj_01", "frame_index": 34},
+          {"object_id": "obj_01", "frame_index": 35},
+          {"object_id": "obj_01", "frame_index": 36}
+        ]
+      }
+    ],
+    "objects": [
+      {
+        "object_id": "obj_01",
+        "motion_class": "bouncing_like",
+        "motion_description": "Falls with a growing step per frame, reverses near the bottom of the image, rises less high than it started and begins to fall again, while drifting right at a steady rate.",
+        "supporting_fact_ids": ["F1", "F2", "F3", "F4", "F5", "F6"]
+      }
+    ],
+    "physical_model_hypotheses": [
+      {
+        "hypothesis_id": "H1",
+        "status": "candidate",
+        "model": "uniform_gravity",
+        "plane_hint": "not_applicable",
+        "applies_to": ["obj_01"],
+        "support": "strong",
+        "supporting_fact_ids": ["F1", "F2", "F3"],
+        "contradicting_fact_ids": [],
+        "rationale": "The step in y changes by a similar amount each frame in the downward direction, both while falling and while rising, which is consistent with a constant downward acceleration.",
+        "alternatives_considered": [
+          "A slowly varying downward force could produce a similar pattern over this short interval."
+        ]
+      },
+      {
+        "hypothesis_id": "H2",
+        "status": "candidate",
+        "model": "plane_contact",
+        "plane_hint": "floor",
+        "applies_to": ["obj_01"],
+        "support": "moderate",
+        "supporting_fact_ids": ["F3", "F4", "F6"],
+        "contradicting_fact_ids": [],
+        "rationale": "The abrupt reversal of vertical motion around frame 19, close to the bottom of the image, is consistent with contact with a horizontal floor, and the lower rebound suggests some loss at contact.",
+        "alternatives_considered": [
+          "The reversal could come from an untracked object or a surface that is not a floor."
+        ]
+      }
+    ],
+    "event_hypotheses": [
+      {
+        "event_id": "E1",
+        "status": "candidate",
+        "type": "possible_bounce",
+        "object_ids": ["obj_01"],
+        "after_frame_index": 18,
+        "before_frame_index": 20,
+        "support": "moderate",
+        "supporting_fact_ids": ["F3", "F4"],
+        "rationale": "y increases from frame 18 to 19 and decreases from 19 to 20, so the reversal happened between frames 18 and 20; the positions alone do not show on which side of frame 19."
+      }
+    ],
+    "interaction_hypotheses": [],
+    "ambiguities": [
+      {
+        "ambiguity_id": "A1",
+        "about_ids": ["E1"],
+        "description": "The contact instant inside the window from frame 18 to frame 20 is not determined by the samples.",
+        "alternatives": [
+          "Contact between frames 18 and 19.",
+          "Contact between frames 19 and 20."
+        ],
+        "what_would_resolve": "Fitting a motion model to the frames on both sides of the reversal."
+      },
+      {
+        "ambiguity_id": "A2",
+        "about_ids": ["H2"],
+        "description": "No surface is observed; contact is inferred from the motion only.",
+        "alternatives": [
+          "A floor just below the largest observed y.",
+          "Contact with another, untracked object."
+        ],
+        "what_would_resolve": "Video frames or a tracked surface position."
+      },
+      {
+        "ambiguity_id": "A3",
+        "about_ids": ["H1", "obj_01"],
+        "description": "Air drag cannot be ruled out over such a short interval.",
+        "alternatives": [
+          "No noticeable drag.",
+          "Weak drag hidden by the short duration."
+        ],
+        "what_would_resolve": "Comparing numerical fits with and without drag."
+      }
+    ],
+    "data_quality_notes": [
+      "Positions are given to 0.01 px and show no visible noise."
+    ]
+  }
+}
