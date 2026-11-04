@@ -1,0 +1,6 @@
+# Web application backend (decompile_web), in addition to requirements.txt.
+# Versions verified on Python 3.13.7 (2026-11-05).
+fastapi==0.162.0
+uvicorn==0.54.0
+python-multipart==0.0.33
+httpx==0.28.1  # FastAPI TestClient (tests only)

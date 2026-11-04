@@ -450,7 +450,10 @@ def reconstruct(video: Path, sam_result_path: Path, out_dir: Path, *, sam_object
                 end_frame: int | None = None, stride: int = 1, outline_model: str = "ellipse",
                 physics_model: str = "image_space", hfov: float = 66.0, cf_restitution: float | None = None,
                 cf_gravity_scale: float | None = None, provenance: str = "real", min_confidence: float = 0.5,
-                write_video: bool = True, disclosures=()) -> dict:
+                write_video: bool = True, disclosures=(), on_stage=None) -> dict:
+    """on_stage(stage, status, detail): optional progress callback (status "started" | "progress" | "done" |
+    "skipped"); it only observes the run and never changes any output."""
+    stage = on_stage if on_stage is not None else (lambda *a, **k: None)
     out_dir = Path(out_dir)
     if out_dir.exists() and any(out_dir.iterdir()):
         raise UsageError(f"{out_dir} is not empty (outputs are never overwritten)")
@@ -465,7 +468,9 @@ def reconstruct(video: Path, sam_result_path: Path, out_dir: Path, *, sam_object
         raise GateError("the SAM result belongs to a different video (SHA-256 mismatch)")
     if not result.completed:
         raise GateError(f"the SAM response is {result.outcome['status']} ({result.outcome.get('reason')})")
+    stage("frames", "started", {})
     table = fr.extract_frames(video, out_dir / "frames")
+    stage("frames", "done", {"frame_count": len(table.frames)})
     if (result.media["width"], result.media["height"], result.media["frame_count"]) != (table.width, table.height,
                                                                                        len(table.frames)):
         raise GateError("SAM media size / frame count differs from the extracted frames")
@@ -484,13 +489,16 @@ def reconstruct(video: Path, sam_result_path: Path, out_dir: Path, *, sam_object
     def source(i):
         if i not in rgb_cache:
             rgb_cache[i] = fr.read_png_rgb(out_dir / "frames" / fr.PNG_PATTERN.format(index=i))
+            stage("measurement", "progress", {"done": len(rgb_cache), "total": len(clip)})
         return by[i], rgb_cache[i]
 
     params = sm.SamMeasureParams(outline_model=outline_model, min_confidence=min_confidence)
+    stage("measurement", "started", {"total": len(clip), "sam_object_id": oid})
     meas = sm.measure_track(result, source, clip, sam_object_id=oid, params=params,
                             sam_result_sha256=hashlib.sha256(raw).hexdigest())
     _write_json(out_dir / "measurement" / "sam_measurement_report.json", meas.to_json_dict())
     counts = meas.status_counts()
+    stage("measurement", "done", {"status_counts": counts})
     report: dict = {"kind": "sam_reconstruction_report", "tool_version": TOOL_VERSION,
                     "label": "REAL VIDEO" if provenance == "real" else "SYNTHETIC video",
                     "video": {"filename": video.name, "sha256": info.sha256, "frames": len(table.frames),
@@ -516,12 +524,19 @@ def reconstruct(video: Path, sam_result_path: Path, out_dir: Path, *, sam_object
     times = [by[i].t for i in clip]
     if len(meas.measured()) < 8:
         report["physics"] = {"program": None, "reasons": [f"only {len(meas.measured())} measured frames"]}
+        stage("trajectory", "skipped", {"reason": report["physics"]["reasons"][0]})
+        stage("physics", "skipped", {"reason": report["physics"]["reasons"][0]})
     else:
+        stage("trajectory", "started", {})
         traj = meas.to_trajectory_set(synthetic=provenance != "real")
         _write_json(out_dir / "measurement" / "trajectory.json", traj.to_json_dict())
+        stage("trajectory", "done", {"observations": len(traj.objects[0].observations)})
+        stage("physics", "started", {"model": physics_model})
         summ, prog, simulate = physics(traj, physics_model, hfov)
         report["physics"] = summ
+        stage("physics", "done", {"program": prog is not None})
         if prog is not None:
+            stage("simulation", "started", {})
             t_first = traj.objects[0].observations[0].t
             times = [t for t in times if t >= t_first]
             sim = simulate(prog, times)
@@ -546,6 +561,9 @@ def reconstruct(video: Path, sam_result_path: Path, out_dir: Path, *, sam_object
                                             "fitted_final_position_px": [float(sim.x_px[-1]), float(sim.y_px[-1])],
                                             "note": "a what-if simulation of the fitted program with changed physical "
                                                     "parameters; not observed, not validated"}
+    if prog is not None:
+        stage("simulation", "done", {"events": len(events), "counterfactual": cf is not None})
+    stage("rendering", "started", {})
     title = (f"{report['label']}: SAM 3.1 ({result.prompt.get('text', 'object prompt')}) -> outline measurement -> "
              f"{report['physics'].get('model', '')} physics")
     if prog is not None:
@@ -595,6 +613,7 @@ def reconstruct(video: Path, sam_result_path: Path, out_dir: Path, *, sam_object
     report["artifacts"] = written + ["report.json", "report.md"]
     _write_json(out_dir / "report.json", report)
     (out_dir / "report.md").write_text(report_md(report), encoding="utf-8")
+    stage("rendering", "done", {})
     return report
 
 
