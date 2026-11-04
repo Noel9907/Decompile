@@ -253,6 +253,39 @@ def test_real_source_with_synthetic_false_is_accepted():
     assert tr.TrajectorySet.from_json_dict(data).synthetic is False
 
 
+def test_source_labels_and_their_synthetic_flags():
+    assert tr.SOURCES == {
+        "SYNTHETIC_ANALYTIC_FIXTURE": True,
+        "SYNTHETIC_NUMERICAL_GENERATOR": True,
+        "CLASSICAL_TRACKER": False,
+        "SAM_3_1": False,
+    }
+
+
+@pytest.mark.parametrize("source, synthetic", sorted(tr.SOURCES.items()))
+def test_every_source_label_round_trips(tmp_path, source, synthetic):
+    data = valid_data()
+    data.update(synthetic=synthetic, source=source)
+    ts = tr.TrajectorySet.from_json_dict(data)
+    assert (ts.source, ts.synthetic) == (source, synthetic)
+    assert ts.to_json_dict()["source"] == source
+    path = tmp_path / "t.json"
+    path.write_text(json.dumps(ts.to_json_dict()), encoding="utf-8")
+    loaded = tr.load_trajectories(path)
+    assert loaded == ts and loaded.source == source
+
+
+def test_numerical_generator_label_must_be_synthetic():
+    data = valid_data()
+    data.update(synthetic=False, source="SYNTHETIC_NUMERICAL_GENERATOR")
+    assert_rejected(data, "contradicts source")
+
+
+def test_existing_fixture_keeps_the_analytic_label():
+    ts = tr.load_trajectories(BOUNCE)
+    assert ts.source == "SYNTHETIC_ANALYTIC_FIXTURE" and ts.synthetic is True
+
+
 @pytest.mark.parametrize("bad", ["Ball_01", "1ball", "ball-01", "ball 01", "", "b" * 33, "obj_01\n", 7, None])
 def test_object_id_rejected(bad):
     data = valid_data()

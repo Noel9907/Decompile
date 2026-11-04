@@ -33,8 +33,11 @@ from decompile.meta_api import strict_json_loads
 SCHEMA = "decompile.trajectories/1"
 
 # source -> whether that source is synthetic. The `synthetic` flag must agree.
+#   SYNTHETIC_ANALYTIC_FIXTURE     closed-form test fixtures (e.g. synthetic_bounce_single)
+#   SYNTHETIC_NUMERICAL_GENERATOR  numerically integrated scenes from decompile.synth
 SOURCES: dict[str, bool] = {
     "SYNTHETIC_ANALYTIC_FIXTURE": True,
+    "SYNTHETIC_NUMERICAL_GENERATOR": True,
     "CLASSICAL_TRACKER": False,
     "SAM_3_1": False,
 }
