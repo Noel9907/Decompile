@@ -20,6 +20,7 @@ from decompile import holdout as ho
 from decompile import overlay as ov
 from decompile import predict as pd
 from decompile import synth
+from decompile import trajectories as tr
 
 ROOT = Path(__file__).resolve().parent.parent
 ALT = synth.SceneSpec("obj_01", 30, 60, 100.0, 60.0, 50.0, 0.0, 0.0, 1200.0, planes=(synth.Plane("y", 440.0, "less", 0.5),))
@@ -185,3 +186,65 @@ def test_overlay_cannot_read_the_vault():
         n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
     for forbidden in ("read_bytes", "read_text", "load", "loads", "strict_json_loads", "vault", "evaluate"):
         assert forbidden not in names, forbidden
+
+
+# ------------------------------------------------------------------ title provenance and layout (P5 visual fix)
+
+
+def _relabel(training, *, source, synthetic):
+    data = training.to_json_dict()
+    data.update(source=source, synthetic=synthetic)
+    return tr.TrajectorySet.from_json_dict(data)
+
+
+@pytest.mark.parametrize("source, synthetic, label", [
+    ("SYNTHETIC_NUMERICAL_GENERATOR", True, "SYNTHETIC scene"),
+    ("CLASSICAL_TRACKER", True, "SYNTHETIC VIDEO"),
+    ("SAM_3_1", True, "SYNTHETIC VIDEO"),
+    ("CLASSICAL_TRACKER", False, "REAL VIDEO"),
+])
+def test_title_names_the_data_provenance(chain, source, synthetic, label):
+    import matplotlib.pyplot as plt
+    training = _relabel(chain["split"].inference.training, source=source, synthetic=synthetic)
+    c = ov.build_chart_data(training, chain["artifact"], chain["report"])
+    assert c["data_label"] == label
+    fig = ov.draw_figure(c)
+    try:
+        title = fig._suptitle.get_text()
+        assert title.endswith(f"({label})")
+        if label != "SYNTHETIC scene":
+            assert "SYNTHETIC scene" not in title
+    finally:
+        plt.close(fig)
+
+
+LONG = ("P2 development disclosure: before P3, while checking that the 70% training split supports a scene program, "
+        "the program's simulated contact times through frame 49 (0.9, 1.44003, 1.60205 s) were printed. No withheld "
+        "positions were used and nothing was tuned or changed afterwards; this evaluation is therefore not fully blind.")
+
+
+@pytest.mark.parametrize("n_disclosures", [1, 3, 8])
+def test_plots_legend_and_disclosures_do_not_overlap(chart, n_disclosures):
+    import matplotlib.pyplot as plt
+    c = copy.deepcopy(chart)
+    c["disclosures"] = [f"{k}: {LONG}" for k in range(n_disclosures)]
+    fig = ov.draw_figure(c)
+    try:
+        fig.canvas.draw()
+        r = fig.canvas.get_renderer()
+        legend = fig.legends[0].get_window_extent(r)
+        notes = next(t for t in fig.texts if ov.CAPTION in t.get_text())
+        nb = notes.get_window_extent(r)
+        for k in range(n_disclosures):  # every disclosure is printed in full
+            assert f"{k}: P2 development disclosure" in notes.get_text().replace("\n", " ")
+        assert "not fully blind." in notes.get_text().replace("\n", " ")
+        plots_bottom = min(ax.get_tightbbox(r).y0 for ax in fig.axes[:3])
+        title = fig._suptitle.get_window_extent(r)
+        fig_h = fig.get_size_inches()[1] * fig.dpi
+        assert nb.y0 >= 0 and title.y1 <= fig_h + 1
+        assert nb.y1 < legend.y0, "disclosures overlap the legend"
+        assert legend.y1 < plots_bottom, "legend overlaps the plots"
+        assert max(ax.get_tightbbox(r).y1 for ax in fig.axes[:3]) < title.y0, "plots overlap the title"
+        assert not legend.overlaps(nb)
+    finally:
+        plt.close(fig)

@@ -32,14 +32,18 @@ from decompile.meta_api import strict_json_loads
 
 SCHEMA = "decompile.trajectories/1"
 
-# source -> whether that source is synthetic. The `synthetic` flag must agree.
-#   SYNTHETIC_ANALYTIC_FIXTURE     closed-form test fixtures (e.g. synthetic_bounce_single)
-#   SYNTHETIC_NUMERICAL_GENERATOR  numerically integrated scenes from decompile.synth
-SOURCES: dict[str, bool] = {
+# source -> the `synthetic` value that source requires, or None if it accepts either.
+# The `synthetic` flag records the provenance of the underlying data (for a tracker: of the
+# video it tracked), not the algorithm that produced the observations.
+#   SYNTHETIC_ANALYTIC_FIXTURE     closed-form test fixtures (e.g. synthetic_bounce_single): always synthetic
+#   SYNTHETIC_NUMERICAL_GENERATOR  numerically integrated scenes from decompile.synth: always synthetic
+#   CLASSICAL_TRACKER              decompile.tracker on a video; synthetic iff the video is synthetic
+#   SAM_3_1                        SAM 3.1 tracking of a video; synthetic iff the video is synthetic
+SOURCES: dict[str, bool | None] = {
     "SYNTHETIC_ANALYTIC_FIXTURE": True,
     "SYNTHETIC_NUMERICAL_GENERATOR": True,
-    "CLASSICAL_TRACKER": False,
-    "SAM_3_1": False,
+    "CLASSICAL_TRACKER": None,
+    "SAM_3_1": None,
 }
 
 COORDINATE_CONSTANTS = {"units": "px", "origin": "top_left", "x_axis": "right", "y_axis": "down"}
@@ -236,7 +240,7 @@ def _parse_set(data: Any, source_name: str | None) -> TrajectorySet:
         reasons.append(f"$.synthetic: must be a boolean, got {synthetic!r}")
     if source not in SOURCES:
         reasons.append(f"$.source: must be one of {sorted(SOURCES)}, got {source!r}")
-    elif isinstance(synthetic, bool) and SOURCES[source] != synthetic:
+    elif isinstance(synthetic, bool) and SOURCES[source] is not None and SOURCES[source] != synthetic:
         reasons.append(f"$.synthetic: {synthetic} contradicts source {source!r}")
 
     coords = _parse_coords(data.get("coordinate_system"), reasons)

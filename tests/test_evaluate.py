@@ -263,3 +263,38 @@ def test_only_the_evaluator_reads_vault_data():
         assert "decompile.evaluate" not in mods and "evaluate" not in imported_from_decompile, path.name
         for forbidden in ("evaluation_vault", "holdout_vault", "write_evaluation_vault", "EvaluationError"):
             assert forbidden not in source, (path.name, forbidden)
+
+
+# ------------------------------------------------------------------ experiment-specific limitations (P5)
+
+
+P3_LIMITATIONS_TEXT = (
+    "Synthetic data from decompile.synth: one pre-registered scene, positions rounded to 0.01 px and no other "
+    "noise. This says nothing about performance on real videos.",
+    "Contact matching is chronological one-to-one without a time gate; timing errors are reported as measured.",
+    "Point predictions only: parameter uncertainty is not propagated to prediction bands.",
+    "Units are image pixels and seconds; nothing is calibrated to metres.",
+)
+
+
+def test_default_limitations_are_the_unchanged_p3_text(chain):
+    assert ev.LIMITATIONS == P3_LIMITATIONS_TEXT
+    default = ev.evaluate(*chain)
+    explicit_none = ev.evaluate(*chain, limitations=None)
+    assert default.data["limitations"] == list(P3_LIMITATIONS_TEXT)
+    assert pd.canonical_bytes(default.data) == pd.canonical_bytes(explicit_none.data)
+
+
+def test_supplied_limitations_are_recorded_and_nothing_else_changes(chain):
+    custom = ["SYNTHETIC VIDEO experiment (test).", "Truth is tracker measurement."]
+    default = ev.evaluate(*chain).data
+    report = ev.evaluate(*chain, limitations=custom).data
+    assert report["limitations"] == custom
+    assert {k: v for k, v in report.items() if k != "limitations"} ==         {k: v for k, v in default.items() if k != "limitations"}
+    assert pd.canonical_bytes(report) == pd.canonical_bytes(ev.evaluate(*chain, limitations=tuple(custom)).data)
+
+
+@pytest.mark.parametrize("bad", ["one string", b"bytes", [], (), ["ok", ""], ["ok", "   "], ["ok", 3], [None], 7])
+def test_invalid_limitations_are_rejected(chain, bad):
+    with pytest.raises(ValueError):
+        ev.evaluate(*chain, limitations=bad)

@@ -14,6 +14,13 @@ draws three panels:
   1. y(t), image coordinates (+y is DOWN: the axis is inverted so the plot looks like the image);
   2. the x-y path (inverted y);
   3. Euclidean error against prediction horizon, every model.
+The title names the data provenance (chart["data_label"], derived from the training
+TrajectorySet): "SYNTHETIC VIDEO" for tracker measurements of a synthetic video, "SYNTHETIC
+scene" for generator trajectories, "REAL VIDEO" for tracker measurements of a real video.
+Layout: the plots, the legend and the caption/disclosure block are three separate horizontal
+bands. The legend and the disclosure block are measured after a first draw and the figure
+height is set from those measurements, so neither overlaps the other or the plots, however
+many disclosures there are.
 The split boundary is drawn halfway between the last training frame and the first withheld
 frame. Training data, withheld truth, the frozen scene-program prediction and the four
 baselines use distinct styles. Predicted contacts (from the artifact) are marked at their
@@ -44,6 +51,13 @@ OVERLAY_VERSION = "decompile.overlay/1"
 SCENE_MODEL = "scene_program"
 TRUTH_CHECK_PX = 1e-9  # derived truth must agree across models to this tolerance
 DENSE_POINTS = 400
+TRACKER_SOURCES = ("CLASSICAL_TRACKER", "SAM_3_1")
+# Figure layout (inches): a fixed plot band; the legend and disclosure bands are measured.
+FIG_WIDTH_IN = 18.0
+PLOT_BAND_IN = 6.2
+TITLE_BAND_IN = 0.45
+BAND_GAP_IN = 0.18
+EDGE_PAD_IN = 0.08
 CAPTION = ("The predictor saw only the training frames (left of the split) and the timestamps of the withheld "
            "frames. Withheld positions were revealed afterwards, for evaluation only.")
 STYLES = {
@@ -61,6 +75,13 @@ class OverlayError(ValueError):
 
 def _t(d: dict) -> Fraction:
     return tr.timestamp_from_json(d)
+
+
+def data_label(training: tr.TrajectorySet) -> str:
+    """Provenance label for the figure title, from the data the predictor actually saw."""
+    if not training.synthetic:
+        return "REAL VIDEO"
+    return "SYNTHETIC VIDEO" if training.source in TRACKER_SOURCES else "SYNTHETIC scene"
 
 
 def build_chart_data(training: tr.TrajectorySet, artifact: dict, report: dict, object_id: str | None = None) -> dict:
@@ -117,7 +138,7 @@ def build_chart_data(training: tr.TrajectorySet, artifact: dict, report: dict, o
     if contacts.get("status") == "evaluated":
         actual = sorted([p["actual_t_s"] for p in contacts["matched"]] + list(contacts["missed_actual_t_s"]))
     return {
-        "overlay_version": OVERLAY_VERSION, "object_id": oid,
+        "overlay_version": OVERLAY_VERSION, "object_id": oid, "data_label": data_label(training),
         "prediction_sha256": report["prediction"]["sha256"], "program_sha256": art["program_sha256"],
         "training": {"t_s": [float(o.t) for o in obs], "x": [o.x for o in obs], "y": [o.y for o in obs]},
         "withheld_truth": {"t_s": [float(t) for t in times], "x": truth_x, "y": truth_y,
@@ -182,7 +203,6 @@ def draw_figure(chart: dict):
     ax_y.text(split, 1.01, f"  split: {chart['split']['n_training']} training | {chart['split']['n_withheld']} withheld frames",
               transform=ax_y.get_xaxis_transform(), fontsize=8, va="bottom")
     handles, labels = ax_y.get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=4, fontsize=7.5, frameon=False, bbox_to_anchor=(0.5, 0.075))
     lo = min(min(tr_["y"]), min(wt["y"]))
     hi = max(max(tr_["y"]), max(wt["y"]))
     pad = 0.35 * (hi - lo)
@@ -218,12 +238,29 @@ def draw_figure(chart: dict):
     ax_e.set_title("Withheld error against horizon")
     ax_e.legend(fontsize=7, loc="center right")
 
-    fig.suptitle("Predictive decompilation: frozen prediction versus withheld reality (SYNTHETIC scene)",
-                 fontsize=12, y=0.995)
+    label = chart.get("data_label", "SYNTHETIC scene")
+    fig.suptitle(f"Predictive decompilation: frozen prediction versus withheld reality ({label})", fontsize=12,
+                 y=0.995)
     notes = [chart["caption"]] + [f"Disclosure: {d}" for d in chart["disclosures"]]
-    fig.text(0.01, 0.005, "\n".join(_wrap(n, 230) for n in notes), fontsize=7.2, va="bottom", ha="left")
-    fig.tight_layout(rect=(0, 0.25, 1, 0.97))
+    legend = fig.legend(handles, labels, loc="upper center", ncol=4, fontsize=7.5, frameon=False)
+    notes_text = fig.text(0.01, 0.0, "\n".join(_wrap(n, 230) for n in notes), fontsize=7.2, va="bottom", ha="left",
+                          linespacing=1.35)
+    _layout(fig, legend, notes_text)
     return fig
+
+
+def _layout(fig, legend, notes_text) -> None:
+    """Stack three bands bottom-up: disclosures, legend, plots. Sizes in inches, measured after a draw."""
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    legend_h = legend.get_window_extent(renderer).height / fig.dpi
+    notes_h = notes_text.get_window_extent(renderer).height / fig.dpi
+    height = EDGE_PAD_IN + notes_h + BAND_GAP_IN + legend_h + BAND_GAP_IN + PLOT_BAND_IN + TITLE_BAND_IN
+    fig.set_size_inches(FIG_WIDTH_IN, height)
+    notes_text.set_position((0.01, EDGE_PAD_IN / height))
+    legend_top = (EDGE_PAD_IN + notes_h + BAND_GAP_IN + legend_h) / height
+    legend.set_bbox_to_anchor((0.5, legend_top), transform=fig.transFigure)
+    fig.tight_layout(rect=(0, legend_top + BAND_GAP_IN / height, 1, 1 - TITLE_BAND_IN / height))
 
 
 def render_png(chart: dict) -> bytes:

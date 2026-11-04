@@ -225,7 +225,7 @@ def mutate(fn):
         (lambda d: d.update(schema="decompile.trajectories/2"), "$.schema"),
         (lambda d: d.update(synthetic=False), "contradicts source"),
         (lambda d: d.update(synthetic=1), "must be a boolean"),
-        (lambda d: d.update(source="CLASSICAL_TRACKER"), "contradicts source"),
+        (lambda d: d.update(synthetic=False, source="SYNTHETIC_ANALYTIC_FIXTURE"), "contradicts source"),
         (lambda d: d.update(source="SAM"), "must be one of"),
         (lambda d: d["coordinate_system"].update(y_axis="up"), "y_axis"),
         (lambda d: d["coordinate_system"].update(units="m"), "units"),
@@ -254,15 +254,36 @@ def test_real_source_with_synthetic_false_is_accepted():
 
 
 def test_source_labels_and_their_synthetic_flags():
+    # None: the flag follows the provenance of the tracked video (either value is valid).
     assert tr.SOURCES == {
         "SYNTHETIC_ANALYTIC_FIXTURE": True,
         "SYNTHETIC_NUMERICAL_GENERATOR": True,
-        "CLASSICAL_TRACKER": False,
-        "SAM_3_1": False,
+        "CLASSICAL_TRACKER": None,
+        "SAM_3_1": None,
     }
 
 
-@pytest.mark.parametrize("source, synthetic", sorted(tr.SOURCES.items()))
+ALLOWED_LABELS = [("SYNTHETIC_ANALYTIC_FIXTURE", True), ("SYNTHETIC_NUMERICAL_GENERATOR", True),
+                  ("CLASSICAL_TRACKER", False), ("CLASSICAL_TRACKER", True), ("SAM_3_1", False), ("SAM_3_1", True)]
+
+
+@pytest.mark.parametrize("source", ["CLASSICAL_TRACKER", "SAM_3_1"])
+def test_tracker_sources_inherit_the_video_provenance(source):
+    for synthetic in (True, False):
+        data = valid_data()
+        data.update(synthetic=synthetic, source=source)
+        ts = tr.TrajectorySet.from_json_dict(data)
+        assert (ts.source, ts.synthetic) == (source, synthetic)
+
+
+@pytest.mark.parametrize("source", ["SYNTHETIC_ANALYTIC_FIXTURE", "SYNTHETIC_NUMERICAL_GENERATOR"])
+def test_generator_sources_must_stay_synthetic(source):
+    data = valid_data()
+    data.update(synthetic=False, source=source)
+    assert_rejected(data, "contradicts source")
+
+
+@pytest.mark.parametrize("source, synthetic", ALLOWED_LABELS)
 def test_every_source_label_round_trips(tmp_path, source, synthetic):
     data = valid_data()
     data.update(synthetic=synthetic, source=source)

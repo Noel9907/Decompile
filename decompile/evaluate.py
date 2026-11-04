@@ -202,8 +202,28 @@ class EvaluationReport:
         return self.data["summary"]
 
 
-def evaluate(prediction_path: str | Path, prediction_sha256_path: str | Path, vault_path: str | Path) -> EvaluationReport:
-    """Verify the frozen prediction against the vault and compute held-out metrics. Reads only."""
+def _check_limitations(limitations: Sequence[str] | None) -> list[str]:
+    """None -> the default LIMITATIONS (unchanged P3 text); otherwise a non-empty sequence of non-empty strings."""
+    if limitations is None:
+        return list(LIMITATIONS)
+    if isinstance(limitations, (str, bytes)) or not isinstance(limitations, Sequence) or not limitations:
+        raise ValueError("limitations must be None or a non-empty sequence of strings")
+    out = []
+    for item in limitations:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(f"every limitation must be a non-empty string, got {item!r}")
+        out.append(item)
+    return out
+
+
+def evaluate(prediction_path: str | Path, prediction_sha256_path: str | Path, vault_path: str | Path, *,
+             limitations: Sequence[str] | None = None) -> EvaluationReport:
+    """Verify the frozen prediction against the vault and compute held-out metrics. Reads only.
+
+    limitations: experiment-specific limitation statements for the report. None (default) keeps
+    the module's LIMITATIONS text exactly. Validated before any file is read (ValueError).
+    """
+    report_limitations = _check_limitations(limitations)
     checks: list[dict] = []
     ok = lambda name, detail: checks.append({"check": name, "passed": True, "detail": detail})  # noqa: E731
     prediction_path, prediction_sha256_path, vault_path = Path(prediction_path), Path(prediction_sha256_path), Path(vault_path)
@@ -337,7 +357,7 @@ def evaluate(prediction_path: str | Path, prediction_sha256_path: str | Path, va
                      "withheld_accuracy": "predictions against withheld positions (held-out)",
                      "baseline_comparison": "withheld RMSE of every model, ranked"},
         "objects": per_object, "summary": summary,
-        "disclosures": disclosures, "limitations": list(LIMITATIONS),
+        "disclosures": disclosures, "limitations": report_limitations,
     })
 
 
