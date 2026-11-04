@@ -42,6 +42,16 @@ Statistics (see NoiseModel):
 - estimated sigma (per axis, profiled out): -2 ln L = sum_axis n ln(RSS_axis / n);
   p additionally counts the two noise parameters. Absolute adequacy cannot be
   calibrated from the same residuals and is reported as "not_assessable".
+- P7 per-observation weights (weights=..., needs sigma_x/sigma_y on every observation, e.g.
+  from the outline measurement of decompile.ball_measure):
+    "per_observation"           sigma_x/sigma_y of each observation are ABSOLUTE 1-sigma
+                                measurement errors: weighted least squares, -2 ln L = chi^2,
+                                absolute adequacy by the chi^2 tail probability.
+    "per_observation_relative"  sigma_x/sigma_y give only RELATIVE precision; the per-axis scale
+                                is profiled out as in the estimated mode (weighted RSS), so a
+                                mis-calibrated absolute uncertainty cannot make a model look
+                                adequate. Absolute adequacy is "not_assessable".
+  With weights=None (default) every result is numerically identical to the unweighted fitter.
 - A numerical variance floor (NUMERICAL_FLOOR_REL x coordinate scale) keeps ln(RSS)
   finite for exact synthetic data. It is a numerical safeguard, not a measurement
   uncertainty, and every use of it is reported.
@@ -340,10 +350,13 @@ def _design(t: np.ndarray, *, accel: bool, contacts: tuple[float, ...] = (), k: 
     return np.column_stack(cols), names
 
 
+WEIGHT_MODES = ("per_observation", "per_observation_relative")
+
+
 class _Ctx:
     """One object's data and noise settings."""
 
-    def __init__(self, obj: ObjectTrajectory, sigma: tuple[float, float] | None) -> None:
+    def __init__(self, obj: ObjectTrajectory, sigma: tuple[float, float] | None, weights: str | None = None) -> None:
         obs = obj.observations
         self.frames = [o.frame_index for o in obs]
         self.t0 = obs[0].t
@@ -355,17 +368,52 @@ class _Ctx:
         self.sigma = sigma
         scale = np.maximum(1.0, np.max(np.abs(self.Q), axis=0))
         self.floor_var = (NUMERICAL_FLOOR_REL * scale) ** 2
+        self.weights = weights
+        self.S: np.ndarray | None = None  # per-observation sigma (n, 2) in the weighted modes
+        if weights is not None:
+            if weights not in WEIGHT_MODES:
+                raise KinematicFitError(f"weights must be one of {WEIGHT_MODES}")
+            if sigma is not None:
+                raise KinematicFitError("give either position_sigma_px or weights, not both")
+            missing = [o.frame_index for o in obs if o.sigma_x is None or o.sigma_y is None]
+            if missing:
+                raise KinematicFitError(f"weights={weights!r} needs sigma_x/sigma_y on every observation; missing on "
+                                        f"frames {missing[:10]}")
+            self.S = np.column_stack([[o.sigma_x for o in obs], [o.sigma_y for o in obs]]).astype(float)
+            self.floor_var = self.floor_var / np.square(np.median(self.S, axis=0))
+
+    @property
+    def absolute(self) -> bool:
+        """True when the noise level is known (supplied sigma or absolute per-observation sigma)."""
+        return self.sigma is not None or self.weights == "per_observation"
 
     @property
     def estimated(self) -> bool:
-        return self.sigma is None
+        return not self.absolute
+
+    def _wfit(self, A: np.ndarray) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
+        """Weighted least squares per axis: coefficients (ncols, 2), whitened RSS (2,), whitened designs."""
+        coefs, rss, designs = [], [], []
+        for i in range(2):
+            w = 1.0 / self.S[:, i]
+            Aw = A * w[:, None]
+            c, *_ = np.linalg.lstsq(Aw, self.Q[:, i] * w, rcond=None)
+            r = (self.Q[:, i] - A @ c) * w
+            coefs.append(c)
+            rss.append(float(r @ r))
+            designs.append(Aw)
+        return np.column_stack(coefs), np.array(rss), designs
 
     def rss(self, A: np.ndarray) -> np.ndarray:
+        if self.S is not None:
+            return self._wfit(A)[1]
         coef, *_ = np.linalg.lstsq(A, self.Q, rcond=None)
         r = self.Q - A @ coef
         return np.sum(r * r, axis=0)
 
     def neg2ll(self, rss: np.ndarray) -> float:
+        if self.S is not None and self.absolute:
+            return float(np.sum(rss))  # whitened: chi^2
         if self.sigma is not None:
             return float(np.sum(rss / np.square(self.sigma)))
         var = np.maximum(rss / self.n, self.floor_var)
@@ -380,6 +428,8 @@ def _finish(ctx: _Ctx, model: str, A: np.ndarray, names: list[str], nonlinear: d
     ncols = A.shape[1]
     if ctx.n - ncols < 1:
         return None  # no residual degrees of freedom
+    if ctx.S is not None:
+        return _finish_weighted(ctx, model, A, names, nonlinear)
     coef, _, rank, _ = np.linalg.lstsq(A, ctx.Q, rcond=None)
     if rank < ncols:
         return None  # coefficients not identifiable
@@ -420,11 +470,55 @@ def _finish(ctx: _Ctx, model: str, A: np.ndarray, names: list[str], nonlinear: d
     )
 
 
+def _finish_weighted(ctx: _Ctx, model: str, A: np.ndarray, names: list[str], nonlinear: dict[str, float]) -> ModelFit | None:
+    """P7: weighted least squares with per-observation sigma (see the module docstring)."""
+    ncols = A.shape[1]
+    if np.linalg.matrix_rank(A) < ncols:
+        return None
+    coef, rss_w, designs = ctx._wfit(A)
+    resid = ctx.Q - A @ coef
+    n_noise = 0 if ctx.absolute else 2
+    p = 2 * ncols + len(nonlinear) + n_noise
+    neg2ll = ctx.neg2ll(rss_w)
+    bic = neg2ll + p * math.log(ctx.N)
+    floored: tuple[str, ...] = ()
+    if ctx.absolute:
+        s2 = np.ones(2)
+        chi2 = float(np.sum(rss_w))
+        dof = ctx.N - (2 * ncols + len(nonlinear))
+        pval = float(_chi2.sf(chi2, dof)) if dof > 0 else None
+    else:
+        unbiased = rss_w / (ctx.n - ncols)
+        floored = tuple(ax for i, ax in enumerate(AXES) if rss_w[i] / ctx.n <= ctx.floor_var[i])
+        s2 = np.maximum(unbiased, ctx.floor_var)
+        chi2, dof, pval = None, None, None
+    cov_units = [np.linalg.inv(Aw.T @ Aw) for Aw in designs]
+    params: dict[str, float] = {}
+    se: dict[str, float] = {}
+    for i, ax in enumerate(AXES):
+        for j, name in enumerate(names):
+            params[f"{ax}.{name}"] = float(coef[j, i])
+            se[f"{ax}.{name}"] = float(math.sqrt(max(cov_units[i][j, j], 0.0) * s2[i]))
+    params.update(nonlinear)
+    rms = np.sqrt(np.sum(resid * resid, axis=0) / ctx.n)
+    return ModelFit(
+        model=model, n_scalar_obs=ctx.N, n_params=p, n_coefficients=2 * ncols, n_nonlinear=len(nonlinear),
+        n_noise_params=n_noise, params=params, param_se=se, rss_px2=(float(rss_w[0]), float(rss_w[1])),
+        rms_px=(float(rms[0]), float(rms[1])), max_abs_residual_px=float(np.max(np.abs(resid))),
+        neg2_log_likelihood=neg2ll, bic=bic, chi2=chi2, chi2_dof=dof, chi2_p_value=pval, floored_axes=floored,
+        residuals_x=tuple(float(v) for v in resid[:, 0]), residuals_y=tuple(float(v) for v in resid[:, 1]),
+        covariance=(cov_units, s2, tuple(names)),
+    )
+
+
 def _lin_se(fit: ModelFit, axis: str, weights: dict[str, float]) -> float:
     """Local standard error of a linear combination of one axis's coefficients."""
     cov_unit, s2, names = fit.covariance
+    i = AXES.index(axis)
+    if isinstance(cov_unit, list):  # weighted fit: one covariance per axis
+        cov_unit = cov_unit[i]
     g = np.array([weights.get(n, 0.0) for n in names])
-    return float(math.sqrt(max(g @ cov_unit @ g, 0.0) * s2[AXES.index(axis)]))
+    return float(math.sqrt(max(g @ cov_unit @ g, 0.0) * s2[i]))
 
 
 # ------------------------------------------------------------------ 1-D profile search
@@ -661,7 +755,11 @@ def _outliers(ctx: _Ctx, fit: ModelFit) -> tuple[tuple[str, int, float], ...]:
     out = []
     for i, (ax, res) in enumerate(zip(AXES, (fit.residuals_x, fit.residuals_y))):
         r = np.asarray(res)
-        if ctx.sigma is not None:
+        if ctx.S is not None:  # P7 weighted: standardise each residual by its own sigma
+            r = r / ctx.S[:, i]
+            scale = 1.0 if ctx.absolute else max(MAD_TO_SIGMA * float(np.median(np.abs(r - np.median(r)))),
+                                                 math.sqrt(ctx.floor_var[i]))
+        elif ctx.sigma is not None:
             scale = ctx.sigma[i]
         else:
             scale = max(MAD_TO_SIGMA * float(np.median(np.abs(r - np.median(r)))), math.sqrt(ctx.floor_var[i]))
@@ -687,8 +785,9 @@ def _nested(d: float | None, *, simple_name: str, complex_name: str) -> tuple[st
     return INCONCLUSIVE, f"Delta BIC = {d:.2f} is between -{BIC_POSITIVE} and {BIC_DECISIVE}"
 
 
-def _analyze_object(obj: ObjectTrajectory, sigma: tuple[float, float] | None) -> ObjectKinematics:
-    ctx = _Ctx(obj, sigma)
+def _analyze_object(obj: ObjectTrajectory, sigma: tuple[float, float] | None,
+                    weights: str | None = None) -> ObjectKinematics:
+    ctx = _Ctx(obj, sigma, weights)
     fds, sds = _finite_differences(obj)
     fits: dict[str, ModelFit] = {}
     drags: dict[str, DragResult] = {}
@@ -930,7 +1029,7 @@ def _analyze_object(obj: ObjectTrajectory, sigma: tuple[float, float] | None) ->
     # ---- adequacy and outliers
     outliers = _outliers(ctx, fits[selected])
     reasons: list[str] = []
-    if ctx.sigma is not None:
+    if ctx.absolute:
         p = fits[selected].chi2_p_value
         if p is not None and p < ADEQUACY_P_MIN:
             reasons.append(f"selected model {selected}: chi^2 = {fits[selected].chi2:.4g} on {fits[selected].chi2_dof} "
@@ -944,7 +1043,7 @@ def _analyze_object(obj: ObjectTrajectory, sigma: tuple[float, float] | None) ->
                        "the one-contact model is inadequate")
     if reasons:
         adequacy = "inadequate"
-    elif ctx.sigma is None:
+    elif not ctx.absolute:
         adequacy = "not_assessable"
         reasons.append("sigma was estimated from the same residuals, so absolute fit adequacy cannot be calibrated")
     else:
@@ -990,14 +1089,27 @@ def _noise(position_sigma_px: Any) -> tuple[NoiseModel, tuple[float, float] | No
 
 
 def analyze_kinematics(traj: TrajectorySet, *, position_sigma_px: float | tuple[float, float] | None = None,
-                       ) -> KinematicsReport:
+                       weights: str | None = None) -> KinematicsReport:
     """Fit the kinematic models to every object of `traj` and return explicit verdicts.
 
     position_sigma_px: measurement standard deviation in px, common (a number) or per axis
     ((sigma_x, sigma_y)); None estimates it per axis from the data.
+    weights (P7): None, "per_observation" or "per_observation_relative" (see the module docstring);
+    uses the sigma_x/sigma_y of every observation. Not combinable with position_sigma_px.
     """
     if not isinstance(traj, TrajectorySet):
         raise KinematicFitError(f"expected a TrajectorySet, got {type(traj).__name__}")
-    noise, sigma = _noise(position_sigma_px)
-    objects = tuple(_analyze_object(o, sigma) for o in traj.objects)
+    if weights is not None:
+        if weights not in WEIGHT_MODES:
+            raise KinematicFitError(f"weights must be one of {WEIGHT_MODES}")
+        if position_sigma_px is not None:
+            raise KinematicFitError("give either position_sigma_px or weights, not both")
+        noise, sigma = NoiseModel(weights, None, (
+            "per-observation 1-sigma measurement errors (sigma_x, sigma_y of each observation) used as ABSOLUTE "
+            "weights; chi^2 adequacy" if weights == "per_observation" else
+            "per-observation sigma_x/sigma_y used as RELATIVE weights; per-axis scale profiled out; absolute "
+            "adequacy not assessable")), None
+    else:
+        noise, sigma = _noise(position_sigma_px)
+    objects = tuple(_analyze_object(o, sigma, weights) for o in traj.objects)
     return KinematicsReport(METHOD_VERSION, noise, objects, dict(THRESHOLDS), LIMITATIONS)

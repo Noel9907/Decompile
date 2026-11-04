@@ -59,6 +59,7 @@ _TOP_KEYS = {"schema", "synthetic", "source", "coordinate_system", "objects"}
 _COORD_KEYS = set(COORDINATE_CONSTANTS) | {"image_width", "image_height"}
 _OBJECT_KEYS = {"object_id", "observations"}
 _OBS_KEYS = {"frame_index", "t", "x", "y"}
+OPTIONAL_OBSERVATION_KEYS = ("sigma_x", "sigma_y", "diameter_px", "sigma_diameter_px")
 _TIME_KEYS = {"num", "den"}
 
 
@@ -135,9 +136,21 @@ class Observation:
     t: Fraction
     x: float
     y: float
+    # Optional per-frame measurement information (P7; None = not measured). Emitted in JSON only when
+    # set, so every earlier trajectory serialises byte-identically. sigma_x/sigma_y: 1-sigma centre
+    # uncertainty (px) from the measurement method; diameter_px: apparent ball diameter (px).
+    sigma_x: float | None = None
+    sigma_y: float | None = None
+    diameter_px: float | None = None
+    sigma_diameter_px: float | None = None
 
     def to_json_dict(self) -> dict:
-        return {"frame_index": self.frame_index, "t": timestamp_to_json(self.t), "x": self.x, "y": self.y}
+        d = {"frame_index": self.frame_index, "t": timestamp_to_json(self.t), "x": self.x, "y": self.y}
+        for key in OPTIONAL_OBSERVATION_KEYS:
+            v = getattr(self, key)
+            if v is not None:
+                d[key] = v
+        return d
 
 
 @dataclass(frozen=True)
@@ -351,7 +364,12 @@ def _parse_observation(value: Any, path: str, reasons: list[str]) -> Observation
         reasons.append(f"{path}: must be an object")
         return None
     n_before = len(reasons)
-    _check_keys(value, _OBS_KEYS, path, reasons)
+    extra = sorted(set(value) - _OBS_KEYS - set(OPTIONAL_OBSERVATION_KEYS))
+    missing = sorted(_OBS_KEYS - set(value))
+    if extra:
+        reasons.append(f"{path}: unknown keys {extra}")
+    if missing:
+        reasons.append(f"{path}: missing keys {missing}")
     fi = value.get("frame_index")
     if not _is_int(fi) or fi < 0 or fi > MAX_INT64:
         reasons.append(f"{path}.frame_index: must be a non-negative integer, got {fi!r}")
@@ -359,9 +377,17 @@ def _parse_observation(value: Any, path: str, reasons: list[str]) -> Observation
     for key in ("x", "y"):
         if key in value and not _finite_number(value[key]):
             reasons.append(f"{path}.{key}: must be a finite number, got {value[key]!r}")
+    for key in OPTIONAL_OBSERVATION_KEYS:
+        if key in value and not (_finite_number(value[key]) and value[key] > 0):
+            reasons.append(f"{path}.{key}: must be a finite positive number, got {value[key]!r}")
+    if ("sigma_x" in value) != ("sigma_y" in value):
+        reasons.append(f"{path}: sigma_x and sigma_y must be given together")
+    if "sigma_diameter_px" in value and "diameter_px" not in value:
+        reasons.append(f"{path}: sigma_diameter_px requires diameter_px")
     if len(reasons) != n_before or t is None:
         return None
-    return Observation(fi, t, float(value["x"]), float(value["y"]))
+    opt = {k: float(value[k]) for k in OPTIONAL_OBSERVATION_KEYS if k in value}
+    return Observation(fi, t, float(value["x"]), float(value["y"]), **opt)
 
 
 def _check_shared_clock(objects: list[ObjectTrajectory], reasons: list[str]) -> None:

@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from decompile import holdout as ho
+from decompile import projective_program as pp
 from decompile import predict as pd
 from decompile import scene_program as sp
 from decompile.meta_api import strict_json_loads
@@ -63,6 +64,10 @@ LIMITATIONS = (
     "Point predictions only: parameter uncertainty is not propagated to prediction bands.",
     "Units are image pixels and seconds; nothing is calibrated to metres.",
 )
+
+
+PROJECTIVE_FORMAT = 2  # P7: decompile.predict_projective
+SUPPORTED_PREDICTION_FORMATS = (pd.PREDICTION_FORMAT_VERSION, PROJECTIVE_FORMAT)
 
 
 class EvaluationError(ValueError):
@@ -231,7 +236,7 @@ def evaluate(prediction_path: str | Path, prediction_sha256_path: str | Path, va
     _, pred, pred_sha = _load_verified(prediction_path, prediction_sha256_path, "prediction_sha256")
     ok("prediction_sha256", pred_sha)
     if not isinstance(pred, dict) or pred.get("kind") != pd.PREDICTION_KIND \
-            or pred.get("prediction_format_version") != pd.PREDICTION_FORMAT_VERSION:
+            or pred.get("prediction_format_version") not in SUPPORTED_PREDICTION_FORMATS:
         raise EvaluationError("prediction_format", "not a prediction artifact of the supported format version")
     if not _finite_numbers(pred):
         raise EvaluationError("prediction_format", "non-finite number in the artifact")
@@ -287,7 +292,16 @@ def evaluate(prediction_path: str | Path, prediction_sha256_path: str | Path, va
                 raise EvaluationError("alignment", f"{o['object_id']}: model {m!r} predictions are incomplete")
     ok("alignment", f"{len(objs)} object(s), {len(vault_obs)} withheld frame(s), models {models}")
 
+    projective = pred["prediction_format_version"] == PROJECTIVE_FORMAT
     for o in objs:
+        if projective:  # P7 format 2: the projective scene program (decompile.projective_program)
+            try:
+                prog2 = pp.program_from_json(o["program"])
+            except (ValueError, KeyError, TypeError) as exc:
+                raise EvaluationError("programs", f"{o['object_id']}: invalid projective program: {exc}") from None
+            if pp.program_sha256(prog2) != o["program_sha256"]:
+                raise EvaluationError("programs", f"{o['object_id']}: program does not match program_sha256")
+            continue
         try:
             prog = sp.program_from_json(o["program"])
         except (sp.ProgramError, KeyError, TypeError) as exc:
@@ -351,7 +365,9 @@ def evaluate(prediction_path: str | Path, prediction_sha256_path: str | Path, va
         "vault": {"path": str(vault_path), "sha256": vault_sha},
         "inputs": {"training_sha256": vault["training_sha256"], "schedule_sha256": vault["schedule_sha256"]},
         "integrity_checks": checks,
-        "model_specifications": {"scene_program": "decompile.scene_program fitted on training data only",
+        "model_specifications": {"scene_program": ("decompile.projective_program (perspective-aware) fitted on training "
+                                                   "data only" if projective else
+                                                   "decompile.scene_program fitted on training data only"),
                                  **pred["baseline_specifications"]},
         "sections": {"training_fit_consistency": "each model against its own training window (not held-out)",
                      "withheld_accuracy": "predictions against withheld positions (held-out)",

@@ -174,9 +174,68 @@ def test_tracker_is_independent_of_generator_renderer_physics_and_vault():
                {f"{n.module}.{a.name}" for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module
                 for a in n.names} | {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
     assert {m for m in imported if m.startswith("decompile")} <= \
-        {"decompile", "decompile.frames", "decompile.trajectories"}
+        {"decompile", "decompile.frames", "decompile.trajectories", "decompile.ball_measure"}  # P7: outline centre
     names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)} | \
             {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
     for forbidden in ("synth", "render", "scene_program", "kinematic_fit", "holdout", "evaluate", "vault",
                       "ground_truth", "GroundTruth", "simulate"):
         assert forbidden not in names
+
+
+# ------------------------------------------------------------------ P6 options (default-off)
+
+
+def test_default_config_serialises_exactly_as_in_p5():
+    assert tk.TrackerConfig().to_json_dict() == {
+        "object_id": "obj_01", "hue_center_deg": 15.0, "hue_tolerance_deg": 25.0, "min_chroma": 60,
+        "weight_floor_chroma": 20.0, "min_area_px": 30, "max_area_px": 20_000, "edge_margin_px": 2}
+    d = tk.detect(_image((150.3, 101.7, 10.0)), tk.TrackerConfig()).to_json_dict()
+    assert "n_mask_px" not in d and "largest_small_component_px" not in d
+
+
+def test_roi_and_exclusion_boxes():
+    img = _image((80.0, 80.0, 10.0), (220.0, 150.0, 10.0))  # two balls: ambiguous by default
+    assert tk.detect(img, tk.TrackerConfig()).status == tk.AMBIGUOUS
+    excl = tk.detect(img, tk.TrackerConfig(exclude_boxes=((190, 120, 250, 180),)))
+    roi = tk.detect(img, tk.TrackerConfig(roi=(0, 0, 160, 240)))
+    for d in (excl, roi):
+        assert d.status == tk.DETECTED and abs(d.x - 80.0) < 0.15 and abs(d.y - 80.0) < 0.15
+    # a ball cut by the ROI edge would have a biased centroid: refused, no coordinate
+    cut = tk.detect(_image((158.0, 120.0, 10.0)), tk.TrackerConfig(roi=(0, 0, 160, 240)))
+    assert cut.status == tk.TOUCHES_BORDER and cut.x is None
+    for bad in ({"roi": (10, 10, 5, 20)}, {"roi": (0, 0, 1)}, {"exclude_boxes": ((0, 0, 1.5, 2),)},
+                {"hue_weighting": 1}):
+        with pytest.raises(ValueError):
+            tk.TrackerConfig(**bad)
+
+
+def test_extended_diagnostics_separate_absence_from_rejection():
+    cfg = tk.TrackerConfig(extended_diagnostics=True, min_area_px=200)
+    empty = tk.detect(_image(), cfg)
+    small = tk.detect(_image((150.0, 100.0, 5.0)), cfg)  # target-coloured but below min_area_px
+    assert empty.status == small.status == tk.MISSING
+    assert empty.n_mask_px == 0 and small.n_mask_px > 0 and small.largest_small_component_px > 0
+
+
+def test_seeded_config_tracks_a_non_orange_ball():
+    s = replace(S0, ball_rgb=(40, 200, 70))  # green
+    img = _image((120.4, 90.6, 12.0), settings=s)
+    cfg, derivation = tk.config_from_seed(img, (106, 76, 136, 106))
+    assert 100 < cfg.hue_center_deg < 150 and cfg.hue_weighting and derivation["seed_box"] == [106, 76, 136, 106]
+    d = tk.detect(_image((200.2, 150.8, 12.0), settings=s), cfg)
+    assert d.status == tk.DETECTED and abs(d.x - 200.2) < 0.15 and abs(d.y - 150.8) < 0.15
+    assert tk.detect(_image((200.2, 150.8, 12.0)), cfg).status == tk.MISSING  # an orange ball is not the target
+    with pytest.raises(tk.SeedError):
+        tk.config_from_seed(img, (10, 10, 40, 40))  # box on plain background
+
+
+def test_frame_subsets(export, result):
+    frames_dir, table, _ = export
+    sub = tk.track_extracted(frames_dir, tk.TrackerConfig(), frames=[40, 0, 20])
+    assert [d.frame_index for d in sub.detections] == [0, 20, 40]
+    assert [d.detection for d in sub.detections] == [result.detections[i].detection for i in (0, 20, 40)]
+    for bad in ([], [0, 0], [999]):
+        with pytest.raises(ValueError):
+            tk.track_extracted(frames_dir, tk.TrackerConfig(), frames=bad)
+    with pytest.raises(ValueError, match="either"):
+        tk.track_extracted(frames_dir, tk.TrackerConfig(), frames=[0], order=[0])

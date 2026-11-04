@@ -44,6 +44,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
+from decompile import projective_program as pp  # noqa: E402
 from decompile import scene_program as sp  # noqa: E402
 from decompile import trajectories as tr  # noqa: E402
 
@@ -116,13 +117,19 @@ def build_chart_data(training: tr.TrajectorySet, artifact: dict, report: dict, o
     t_last, t_first = obs[-1].t, times[0]
     split = (t_last + t_first) / 2
 
-    prog = sp.program_from_json(art["program"])
-    if sp.program_sha256(prog) != art["program_sha256"]:
-        raise OverlayError("embedded program does not match program_sha256")
-    t0 = prog.body.t0
+    if art.get("program_kind") == pp.PROGRAM_KIND:  # P7 projective scene program
+        prog = pp.program_from_json(art["program"])
+        if pp.program_sha256(prog) != art["program_sha256"]:
+            raise OverlayError("embedded program does not match program_sha256")
+        t0, simulate = prog.t0, pp.simulate
+    else:
+        prog = sp.program_from_json(art["program"])
+        if sp.program_sha256(prog) != art["program_sha256"]:
+            raise OverlayError("embedded program does not match program_sha256")
+        t0, simulate = prog.body.t0, sp.simulate
     dense_t = [t0 + (times[-1] - t0) * Fraction(i, DENSE_POINTS) for i in range(DENSE_POINTS + 1)]
-    dense = sp.simulate(prog, dense_t)
-    check = sp.simulate(prog, times)
+    dense = simulate(prog, dense_t)
+    check = simulate(prog, times)
     if list(check.x_px) != art["predictions"][SCENE_MODEL]["x"] or list(check.y_px) != art["predictions"][SCENE_MODEL]["y"]:
         raise OverlayError("re-simulating the frozen program does not reproduce the frozen prediction")
     dense_b = [t_last + (times[-1] - t_last) * Fraction(i, 100) for i in range(101)]

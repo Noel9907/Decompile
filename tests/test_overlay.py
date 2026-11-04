@@ -180,7 +180,7 @@ def test_overlay_cannot_read_the_vault():
         a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
     from_decompile = {a.name for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module == "decompile"
                       for a in n.names}
-    assert from_decompile == {"scene_program", "trajectories"}
+    assert from_decompile == {"scene_program", "trajectories", "projective_program"}  # P7: format-2 programs
     assert not {m for m in mods if m and ("evaluate" in m or "holdout" in m or "synth" in m or "predict" in m)}
     names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)} | {
         n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
