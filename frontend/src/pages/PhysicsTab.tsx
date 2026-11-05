@@ -90,7 +90,7 @@ export default function PhysicsTab({ run, analysis }: { run: Run; analysis: Anal
             <Readout label="Fit RMS" value={fmt.num(rc?.rms_px, 2)} unit="px" note={`${fmt.num(rc?.rms_normalised, 2)} σ over ${rc?.n ?? "—"} frames`} />
             <Readout
               label="Adequacy gate"
-              value={<span style={{ color: adequacy === "adequate" ? "#7fd17f" : "#fbc85a", fontSize: 16 }}>{adequacy ?? "—"}</span>}
+              value={<span style={{ color: adequacy === "adequate" ? "var(--good-ink)" : "var(--warn-ink)", fontSize: 16 }}>{adequacy ?? "—"}</span>}
               note={adequacyReasons.join("; ") || "fit residuals consistent with σ"}
             />
             {projective && <Readout label="Implied ball Ø" value={fmt.num((p.implied_ball_diameter_m_if_g_9_81 ?? 0) * 100, 1)} unit="cm" note="if g = 9.81 m/s²" />}

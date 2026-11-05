@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
-  Analysis, Artifact, Counterfactual, Health, Perception, Plan, ReconParams, Run, RunEvent, RunListItem,
+  AskResult, FitReview, Analysis, Artifact, Counterfactual, Health, Perception, Plan, ReconParams, Run, RunEvent, RunListItem,
 } from "./types";
 
 export class ApiError extends Error {
@@ -55,8 +55,12 @@ export const api = {
   reconstruct: (id: string, p: Partial<ReconParams>) => req<{ recon_id: string; run: Run }>(`/api/runs/${id}/reconstructions`, json(p)),
   recon: (id: string, rid: string) => req<{ reconstruction: any; analysis: Analysis | null }>(`/api/runs/${id}/reconstructions/${rid}`),
   perception: (id: string, rid: string) => req<Perception>(`/api/runs/${id}/reconstructions/${rid}/perception`),
-  counterfactual: (id: string, rid: string, p: { restitution: number | null; gravity_scale: number | null; extend_s: number }) =>
+  counterfactual: (id: string, rid: string, p: { restitution: number | null; gravity_scale: number | null; extend_s: number; velocity_scale?: number | null; remove_floor?: boolean }) =>
     req<Counterfactual>(`/api/runs/${id}/reconstructions/${rid}/counterfactuals`, json(p)),
+  source: (id: string, rid: string) => req<{ display: string; exact: string; filename: string }>(`/api/runs/${id}/reconstructions/${rid}/source`),
+  predict: (id: string, rid: string) => req<unknown>(`/api/runs/${id}/reconstructions/${rid}/predict`, { method: "POST" }),
+  explain: (id: string, rid: string) => req<FitReview>(`/api/runs/${id}/reconstructions/${rid}/explain`, { method: "POST" }),
+  ask: (id: string, rid: string, question: string) => req<AskResult>(`/api/runs/${id}/reconstructions/${rid}/ask`, json({ question })),
   renderCounterfactual: (id: string, rid: string, cf: string) =>
     req<{ path: string }>(`/api/runs/${id}/reconstructions/${rid}/counterfactuals/${cf}/video`, { method: "POST" }),
   artifacts: (id: string) => req<Artifact[]>(`/api/runs/${id}/artifacts`),

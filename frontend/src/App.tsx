@@ -3,7 +3,7 @@ import { api } from "./api";
 import Home from "./pages/Home";
 import RunPage, { type TabKey } from "./pages/RunPage";
 import type { Health } from "./types";
-import { Badge, Logo } from "./ui";
+import { Logo } from "./ui";
 
 /** Hash routes keep the current run in the URL, so a refresh restores the workspace:
  *  #/                      home
@@ -16,51 +16,63 @@ export function parseHash(hash: string): { page: "home" } | { page: "run"; id: s
 
 export function navigate(path: string) {
   window.location.hash = path;
+  window.scrollTo({ top: 0 });
 }
 
 export default function App() {
   const [route, setRoute] = useState(() => parseHash(window.location.hash));
   const [health, setHealth] = useState<Health | null>(null);
   const [offline, setOffline] = useState(false);
+  const [theme, setTheme] = useState<string>(() => localStorage.getItem("decompile.theme") ?? "light");
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("decompile.theme", theme);
+  }, [theme]);
 
   useEffect(() => {
     const on = () => setRoute(parseHash(window.location.hash));
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, []);
-
   useEffect(() => {
     api.health().then(setHealth).catch(() => setOffline(true));
   }, []);
 
+  const goHome = (anchor?: string) => (e: React.MouseEvent) => {
+    e.preventDefault();
+    window.location.hash = "/";
+    setTimeout(() => (anchor ? document.getElementById(anchor)?.scrollIntoView() : window.scrollTo({ top: 0 })), 30);
+  };
+
   return (
     <>
       <header className="topbar">
-        <a className="brand" href="#/">
+        <a className="brand" href="#/" onClick={goHome()}>
           <Logo />
-          <span className="brand-name">DECOMPILE</span>
-          <span className="brand-tag">Turn reality into executable physics</span>
+          <span className="brand-name">Decompile</span>
         </a>
+        <nav className="nav">
+          <a href="#how" onClick={goHome("how")}>How it works</a>
+          <a href="#upload" onClick={goHome("upload")}>Decompile a video</a>
+          <a href="#projects" onClick={goHome("projects")}>Projects</a>
+        </nav>
         <span className="spacer" />
-        <span className="server-pill">
+        <button className="theme-toggle" onClick={() => setTheme(theme === "light" ? "dark" : "light")} aria-label="toggle colour theme" title="Toggle light / dark">
+          {theme === "light" ? "☾" : "☀"}
+        </button>
+        <span className="pill" title="Meta Model API status on this server">
           {offline ? (
-            <Badge tone="bad">backend unreachable</Badge>
+            <><span className="led bad" />server offline</>
           ) : health ? (
-            <>
-              <Badge tone={health.live_sam_enabled && health.api_key_configured ? "good" : "warn"}>
-                {health.live_sam_enabled ? (health.api_key_configured ? "live SAM 3.1 enabled" : "live SAM: no API key") : "live SAM disabled"}
-              </Badge>
-              <span className="mono tiny">{health.version}</span>
-            </>
-          ) : null}
+            <><span className={`led ${health.api_key_configured ? "on" : "off"}`} />
+              SAM 3.1 {health.live_sam_enabled && health.api_key_configured ? "live" : "off"} · Muse Spark {health.spark_available ? "live" : "off"}</>
+          ) : (
+            <>connecting…</>
+          )}
         </span>
       </header>
       <main className="page">
-        {route.page === "home" ? (
-          <Home health={health} />
-        ) : (
-          <RunPage key={route.id} runId={route.id} tab={route.tab} health={health} />
-        )}
+        {route.page === "home" ? <Home health={health} /> : <RunPage key={route.id} runId={route.id} tab={route.tab} health={health} />}
       </main>
     </>
   );

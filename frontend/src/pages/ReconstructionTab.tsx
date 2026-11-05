@@ -41,7 +41,7 @@ export default function ReconstructionTab({ run, rid, analysis }: { run: Run; ri
       <div className="readouts">
         <Readout label="SAM object" value={`#${selected}`} note={`of ${rep.sam.objects_in_result.length} in result · ${rep.sam.model}`} />
         <Readout label="Window" value={`${rep.clip.start_frame}–${rep.clip.end_frame_exclusive - 1}`} note={`${rep.clip.frames} frames`} />
-        <Readout label="Measured" value={c.measured} note={<span style={{ color: "#7fd17f" }}>accepted with coordinate</span>} />
+        <Readout label="Measured" value={c.measured} note={<span style={{ color: "var(--good-ink)" }}>accepted with coordinate</span>} />
         <Readout label="Uncertain" value={c.uncertain} note="no coordinate, not interpolated" />
         <Readout label="Missing" value={c.missing} note="no usable mask / outline" />
         <Readout label="Median σ" value={fmt.num(rep.measurement.median_sigma_px, 2)} unit="px" note="per-frame 1σ centre" />
@@ -68,7 +68,7 @@ export default function ReconstructionTab({ run, rid, analysis }: { run: Run; ri
         >
           <FrameInspector runId={run.id} rid={rid} analysis={analysis} perception={perception.data} index={index} setIndex={setIndex} layers={layers} width={W} height={H} />
           <div className="legend" style={{ marginTop: 10 }}>
-            <span className="k"><span className="sw" style={{ background: "#e9e7e1" }} />SAM mask &amp; box (selected)</span>
+            <span className="k"><span className="sw" style={{ background: "var(--ink-4)" }} />SAM mask &amp; box (selected)</span>
             <span className="k"><span className="sw dash" style={{ borderColor: "#7d7f80" }} />other SAM objects</span>
             <span className="k"><span className="sw" style={{ background: "var(--series-measured)" }} />measured outline &amp; path</span>
             {analysis.fitted && <span className="k"><span className="sw dash" style={{ borderColor: "var(--series-fitted)" }} />scene program</span>}

@@ -158,7 +158,7 @@ export default function Chart({
               {t.toFixed(2)}
             </text>
           ))}
-          <line x1={M.l} x2={M.l + iw} y1={M.t + ih} y2={M.t + ih} stroke="#343b42" />
+          <line x1={M.l} x2={M.l + iw} y1={M.t + ih} y2={M.t + ih} stroke="var(--line-strong)" />
         </g>
         {/* frames without a coordinate: drawn as ticks on the time axis, never interpolated */}
         {gaps.map((g, i) => (

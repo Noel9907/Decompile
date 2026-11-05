@@ -112,7 +112,8 @@ function describeDetail(d: Record<string, unknown> | null): string {
     const c = d.status_counts as Record<string, number>;
     parts.push(`measured ${c.measured} · uncertain ${c.uncertain} · missing ${c.missing}`);
   }
-  if (d.usage && typeof d.usage === "object") parts.push(`usage ${JSON.stringify(d.usage)}`);
+  if (d.usage && typeof d.usage === "object" && "video_frames_processed" in (d.usage as object))
+    parts.push(`billed ${(d.usage as Record<string, number>).video_frames_processed} frames`);
   return parts.join(" · ");
 }
 

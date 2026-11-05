@@ -181,18 +181,20 @@ describe("missing scene program", () => {
 describe("counterfactual controls", () => {
   it("re-runs the server simulator with the new restitution and labels the result hypothetical", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    fetchMock.mockImplementation((_url: string, init: RequestInit) => ok(cfResponse(JSON.parse(String(init.body)).restitution)));
+    fetchMock.mockImplementation((url: string, init?: RequestInit) =>
+      url.endsWith("/source") ? ok({ display: "x = 1", exact: "x = 1", filename: "d.py" }) : ok(cfResponse(JSON.parse(String(init!.body)).restitution)));
+    const cfCalls = () => fetchMock.mock.calls.filter(([u]) => String(u).endsWith("/counterfactuals"));
     render(<SimulationTab run={run} rid="r1" analysis={analysis(true)} />);
     await act(async () => {
       vi.advanceTimersByTime(300);
     });
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(cfCalls()).toHaveLength(1));
     fireEvent.change(screen.getByLabelText("restitution"), { target: { value: "0.9" } });
     await act(async () => {
       vi.advanceTimersByTime(300);
     });
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    const [url, init] = fetchMock.mock.calls[1];
+    await waitFor(() => expect(cfCalls()).toHaveLength(2));
+    const [url, init] = cfCalls()[1];
     expect(url).toBe(`/api/runs/${run.id}/reconstructions/r1/counterfactuals`);
     expect(JSON.parse(init.body)).toMatchObject({ restitution: 0.9, gravity_scale: null });
     expect(await screen.findByText("Fitted vs counterfactual")).toBeInTheDocument();

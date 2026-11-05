@@ -16,6 +16,7 @@ per-frame tables) and a counterfactual overlay rendering of simulator output.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import importlib.util
 import json
@@ -40,6 +41,8 @@ from decompile.meta_api import strict_json_loads
 
 from . import WEB_VERSION
 from .config import ROOT
+from .source import sources as program_sources
+from . import ask as ask_mod
 from .security import CF_ID_RE, RECON_ID_RE, redact, safe_child
 from .store import RunStore, utc_now, write_json_atomic
 
@@ -796,8 +799,25 @@ def build_perception(run_dir: Path, run: dict, rid: str, report: dict) -> dict:
 # ------------------------------------------------------------------ 5. counterfactuals
 
 
+def _edit_program(prog, *, velocity_scale: float | None, remove_floor: bool):
+    """Extra what-if edits on top of sam_demo.counterfactual: initial speed and floor removal (program edits only)."""
+    if velocity_scale is None and not remove_floor:
+        return prog
+    extra = {"velocity_scale": velocity_scale, "floor_removed": bool(remove_floor)}
+    cfp = dict(prog.provenance.get("counterfactual") or {})
+    if isinstance(prog, pprog.ProjectiveProgram):
+        return dataclasses.replace(
+            prog, v0=tuple(v * velocity_scale for v in prog.v0) if velocity_scale is not None else prog.v0,
+            plane_offset=-1.0e6 if remove_floor else prog.plane_offset,  # floor moved out of reach = no floor
+            provenance={**prog.provenance, "counterfactual": {**cfp, **extra}})
+    b = prog.body
+    body = dataclasses.replace(b, vx0=b.vx0 * velocity_scale, vy0=b.vy0 * velocity_scale) if velocity_scale is not None else b
+    return sp.SceneProgram(body, prog.acceleration, () if remove_floor else prog.planes,
+                           {**prog.provenance, "counterfactual": {**cfp, **extra}})
+
+
 def counterfactual(run_dir: Path, rid: str, *, restitution: float | None, gravity_scale: float | None,
-                   extend_s: float = 0.0) -> dict:
+                   extend_s: float = 0.0, velocity_scale: float | None = None, remove_floor: bool = False) -> dict:
     rdir = recon_dir(run_dir, rid)
     data, prog, simulate = _load_program(rdir)
     if prog is None:
@@ -808,9 +828,15 @@ def counterfactual(run_dir: Path, rid: str, *, restitution: float | None, gravit
         raise PipelineError("gravity_scale must be within [0.1, 3]")
     if not 0.0 <= float(extend_s) <= 3.0:
         raise PipelineError("extend_s must be within [0, 3] seconds")
+    if velocity_scale is not None and not 0.2 <= float(velocity_scale) <= 3.0:
+        raise PipelineError("velocity_scale must be within [0.2, 3]")
     params = {"restitution": None if restitution is None else float(restitution),
               "gravity_scale": None if gravity_scale is None else float(gravity_scale),
               "extend_s": float(extend_s)}
+    if velocity_scale is not None and float(velocity_scale) != 1.0:
+        params["velocity_scale"] = float(velocity_scale)
+    if remove_floor:
+        params["remove_floor"] = True
     cf_id = "cf_" + _sha_bytes(json.dumps({"rid": rid, **params}, sort_keys=True).encode())[:16]
     path = rdir / "web" / "counterfactuals" / f"{cf_id}.json"
     if path.is_file():
@@ -818,6 +844,7 @@ def counterfactual(run_dir: Path, rid: str, *, restitution: float | None, gravit
     cf = demo.counterfactual(prog, restitution=params["restitution"], gravity_scale=params["gravity_scale"])
     if cf is None:  # no change requested: the counterfactual is the fitted program itself
         cf = prog
+    cf = _edit_program(cf, velocity_scale=params.get("velocity_scale"), remove_floor=params.get("remove_floor", False))
     meas = _read_json(rdir / "measurement" / "sam_measurement_report.json")
     traj = _read_json(rdir / "measurement" / "trajectory.json")
     t_first = _frac(traj["objects"][0]["observations"][0]["t"])
@@ -831,6 +858,7 @@ def counterfactual(run_dir: Path, rid: str, *, restitution: float | None, gravit
     except (sp.SimulationError, ValueError) as exc:
         raise PipelineError(f"The simulator stopped: {exc}") from None
     cf_json = pprog.program_to_json(cf) if isinstance(cf, pprog.ProjectiveProgram) else sp.program_to_json(cf)
+    title = _source_title(rdir)
     result = {"kind": "decompile_counterfactual", "id": cf_id, "recon_id": rid, "created_utc": utc_now(),
               "label": "HYPOTHETICAL - a what-if simulation of the fitted scene program with changed physical "
                        "parameters. Not observed and not validated.",
@@ -839,9 +867,110 @@ def counterfactual(run_dir: Path, rid: str, *, restitution: float | None, gravit
               "fitted_program_sha256": _sha_bytes(json.dumps(data, sort_keys=True).encode()),
               "frames": {"frame_index": findex, "fitted": _sim_dict(fitted_f, ftimes), "counterfactual": _sim_dict(cf_f, ftimes)},
               "dense": {"fitted": _sim_dict(fitted_d, dense), "counterfactual": _sim_dict(cf_d, dense)},
-              "observed_until_s": float(ftimes[-1])}
+              "observed_until_s": float(ftimes[-1]),
+              "source": program_sources(cf_json, {"title": f"HYPOTHETICAL counterfactual of {title}"})}
     write_json_atomic(path, result)
     return result
+
+
+def _source_title(rdir: Path) -> str:
+    rep = _read_json(rdir / "report.json")
+    c = rep["clip"]
+    try:  # the uploaded file's (sanitised) name, not the internal input/video.mp4
+        name = json.loads((rdir.parent.parent / "run.json").read_text(encoding="utf-8"))["original_filename"]
+    except (OSError, ValueError, KeyError):
+        name = rep["video"]["filename"]
+    return f"{name}, frames {c['start_frame']}-{c['end_frame_exclusive'] - 1}"
+
+
+def ask_whatif(run_dir: Path, rid: str, question: str, client_factory) -> dict:
+    """Muse Spark maps the question to supported parameters; the simulator computes the counterfactual."""
+    rdir = recon_dir(run_dir, rid)
+    data, prog, _ = _load_program(rdir)
+    if prog is None:
+        raise PipelineError("This reconstruction has no executable scene program, so there is nothing to simulate.")
+    key = ask_mod.ask_key(rid, question)
+    path = rdir / "web" / "asks" / f"ask_{key}.json"
+    if path.is_file():
+        rec = _read_json(path)
+    else:
+        rep = _read_json(rdir / "report.json")
+        phys = rep.get("physics", {})
+        params = _program_params(data)
+        context = {"object": (rep.get("sam", {}).get("prompt") or {}).get("text", "the tracked object"),
+                   "model": params["model"], "measured_restitution": round(params["restitution"], 4),
+                   "gravity_in_video": "Earth (1 x); magnitude in the program's units "
+                                       f"{params.get('gravity_magnitude_diameters_s2') or params.get('gravity_magnitude_px_s2'):.2f}",
+                   "implied_object_diameter_m_if_earth_gravity": phys.get("implied_ball_diameter_m_if_g_9_81"),
+                   "observed_contacts": 1, "observed_duration_s": round(rep["clip"]["frames"] / 30.0, 2)}
+        try:
+            interp = ask_mod.interpret(question, context, client_factory, rdir / "web" / "asks" / "api_evidence")
+        except ask_mod.AskError as exc:
+            raise PipelineError(str(exc)) from None
+        rec = {"kind": "decompile_whatif", "key": key, "created_utc": utc_now(), "interpretation": interp}
+        write_json_atomic(path, rec)
+    it = rec["interpretation"]
+    cf = None
+    if it["supported"] and (it["restitution"] is not None or it["gravity_scale"] is not None
+                            or it.get("velocity_scale") is not None or it.get("remove_floor")):
+        cf = counterfactual(run_dir, rid, restitution=it["restitution"], gravity_scale=it["gravity_scale"],
+                            extend_s=it["extend_s"], velocity_scale=it.get("velocity_scale"),
+                            remove_floor=bool(it.get("remove_floor")))
+    return {"interpretation": it, "counterfactual": cf}
+
+
+def explain_fit(run_dir: Path, rid: str, client_factory) -> dict:
+    """Muse Spark reviews the fitted numbers (commentary only; cached per reconstruction)."""
+    rdir = recon_dir(run_dir, rid)
+    path = rdir / "web" / "explain.json"
+    if path.is_file():
+        return _read_json(path)
+    data, prog, _ = _load_program(rdir)
+    if prog is None:
+        raise PipelineError("This reconstruction has no scene program to explain.")
+    rep = _read_json(rdir / "report.json")
+    meas = _read_json(rdir / "measurement" / "sam_measurement_report.json")
+    phys, m, rc = rep["physics"], rep["measurement"], rep.get("reconstruction_consistency") or {}
+    flagged = [{"frame": f["frame_index"], "status": f["status"], "reason": f["reason"]}
+               for f in meas["frames"] if f["status"] != "measured"]
+    params = _program_params(data)
+    context = {"object_named_by_user": (rep["sam"].get("prompt") or {}).get("text"),
+               "physics_model": params["model"], "restitution": params["restitution"],
+               "contact_time_s": phys.get("contact_t_s") or (phys.get("kinematics") or {}).get("contact", {}).get("t_s"),
+               "contact_between_measured_frames": phys.get("contact_between_measured_frames"),
+               "gravity_magnitude": params.get("gravity_magnitude_diameters_s2") or params.get("gravity_magnitude_px_s2"),
+               "gravity_units": "ball diameters per s^2" if params["model"] == "projective" else "px per s^2",
+               "implied_ball_diameter_m_if_earth_gravity": phys.get("implied_ball_diameter_m_if_g_9_81"),
+               "camera": "focal length from a 66 deg field-of-view prior, not calibrated",
+               "model_verdicts": phys.get("verdicts"),
+               "verdict_glossary": {
+                   "perspective": "supported = depth/perspective effects are present in the data and modelled",
+                   "acceleration_change_at_contact": "not_supported = the data do NOT require different gravity before "
+                                                     "and after the bounce (the expected, physically correct outcome); "
+                                                     "this does not question that a bounce happened",
+                   "second_discontinuity": "inconclusive = no clear evidence of a second bounce in the window"},
+               "adequacy_gate": phys.get("adequacy"),
+               "adequacy_meaning": "adequate = residuals are consistent with the per-frame measurement uncertainty",
+               "fit_rms_px": rc.get("rms_px"), "fit_rms_in_sigma": rc.get("rms_normalised"), "fitted_frames": rc.get("n"),
+               "window_frames": rep["clip"]["frames"], "measured_frames": m["status_counts"],
+               "median_measurement_sigma_px": m.get("median_sigma_px"), "flagged_frames": flagged[:12],
+               "note": "the model was fitted to these same frames (consistency check, not a held-out prediction)"}
+    try:
+        out = ask_mod.explain(context, client_factory, rdir / "web" / "asks" / "api_evidence")
+    except ask_mod.AskError as exc:
+        raise PipelineError(str(exc)) from None
+    out["created_utc"] = utc_now()
+    write_json_atomic(path, out)
+    return out
+
+
+def program_source_for(run_dir: Path, rid: str) -> dict:
+    rdir = recon_dir(run_dir, rid)
+    data, prog, _ = _load_program(rdir)
+    if prog is None:
+        raise PipelineError("This reconstruction has no executable scene program.")
+    return {**program_sources(data, {"title": f"Decompiled from {_source_title(rdir)}"}),
+            "filename": f"decompiled_{rid}.py"}
 
 
 def get_counterfactual(run_dir: Path, rid: str, cf_id: str) -> dict:
@@ -992,6 +1121,11 @@ ARTIFACT_RULES = [
     (lambda p: p.endswith("/counterfactual_program.json"), "physics", "Counterfactual scene program (engine)"),
     (lambda p: "/web/counterfactuals/" in p and p.endswith(".json"), "counterfactual",
      "Counterfactual scene program and simulation (hypothetical)"),
+    (lambda p: p.endswith("/web/explain.json"), "report", "Muse Spark review of the fit"),
+    (lambda p: p.endswith("/web/heldout.json"), "physics", "Held-out prediction of the later frames"),
+    (lambda p: "/web/asks/" in p and p.endswith(".json") and "/api_evidence/" not in p, "counterfactual",
+     "Muse Spark what-if interpretation"),
+    (lambda p: "/web/asks/api_evidence/" in p, "counterfactual", "Muse Spark API evidence (redacted)"),
     (lambda p: "/web/counterfactuals/" in p and p.endswith(".mp4") and ".partial" not in p, "counterfactual",
      "Counterfactual simulation video (hypothetical)"),
     (lambda p: p.endswith("/report.md") and p.startswith("recon/"), "report", "Human-readable report"),
@@ -1012,7 +1146,7 @@ def list_artifacts(run_dir: Path) -> list[dict]:
         if not f.is_file() or f.name.endswith(".tmp") or ".tmp" in f.suffixes:
             continue
         rel = f.relative_to(run_dir).as_posix()
-        if "/frames/" in rel or rel.startswith("input/preview/") or rel.endswith("plan_resolved.json"):
+        if "/frames/" in rel or rel.startswith("input/preview/") or rel.endswith("plan_resolved.json") or "/heldout_measure/" in rel:
             continue
         for pred, cat, label in ARTIFACT_RULES:
             if pred(rel):
@@ -1039,3 +1173,146 @@ def remove_partial_upload(path: Path) -> None:
             path.unlink()
     except OSError:
         pass
+
+
+# ------------------------------------------------------------------ held-out prediction (frames the fit never saw)
+
+
+def heldout_prediction(run_dir: Path, rid: str) -> dict:
+    """Predict the video AFTER the fitted window with the fitted program, and compare with Decompile's measurement of
+    those later frames (never used by the fit). Measurement-only reuse of sam_demo.reconstruct; nothing is refitted."""
+    rdir = recon_dir(run_dir, rid)
+    out_path = rdir / "web" / "heldout.json"
+    if out_path.is_file():
+        return _read_json(out_path)
+    data, prog, simulate = _load_program(rdir)
+    if prog is None:
+        raise PipelineError("This reconstruction has no scene program, so it cannot predict anything.")
+    run = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+    rec = next(r for r in run["reconstructions"] if r["id"] == rid)
+    rep = _read_json(rdir / "report.json")
+    n = run["video"]["frame_count"]
+    start = rep["clip"]["end_frame_exclusive"]
+    end = min(n, start + demo.MAX_TRAJECTORY_FRAMES)
+    if end - start < MIN_RECON_FRAMES:
+        raise PipelineError("There are fewer than 4 frames after the fitted window, so there is nothing left to predict.")
+    mdir = rdir / "web" / "heldout_measure"
+    if mdir.exists():
+        shutil.rmtree(mdir)
+    with _ENGINE_LOCK:
+        try:
+            demo.reconstruct(video_path(run_dir), safe_child(run_dir, run["sam"]["result"]["path"]), mdir,
+                             sam_object=rep["sam"]["object_id"], start_frame=start, end_frame=end,
+                             outline_model=rec["params"]["outline_model"], physics_model=rec["params"]["physics_model"],
+                             hfov=rec["params"]["hfov_deg"], min_confidence=rec["params"]["min_confidence"],
+                             provenance="real" if run["provenance"] == "real" else "synthetic", write_video=False)
+        except (demo.UsageError, demo.GateError, st.SamTrackingError) as exc:
+            raise PipelineError(f"The later frames could not be measured: {exc}") from None
+    meas = _read_json(mdir / "measurement" / "sam_measurement_report.json")
+    frames = [f for f in meas["frames"]]
+    times = [_frac(f["t"]) for f in frames]
+    sim = simulate(prog, times)
+    sd = _sim_dict(sim, times)
+    valid_until = sd.get("valid_until_s", math.inf)
+    rows, errs = [], []
+    for k, f in enumerate(frames):
+        valid = sd["t"][k] <= valid_until + 1e-9
+        row = {"frame_index": f["frame_index"], "t_s": sd["t"][k], "status": f["status"], "reason": f["reason"],
+               "measured": [f["x"], f["y"]] if f["status"] == "measured" else None,
+               "sigma": [f["sigma_x"], f["sigma_y"]] if f["status"] == "measured" else None,
+               "predicted": [sd["x"][k], sd["y"][k]] if valid else None,
+               "predicted_diameter_px": sd["d"][k] if valid and "d" in sd else None}
+        if row["measured"] and row["predicted"]:
+            row["error_px"] = math.hypot(row["predicted"][0] - row["measured"][0], row["predicted"][1] - row["measured"][1])
+            errs.append(row["error_px"])
+        rows.append(row)
+    # dense predicted curve over the held-out span (for drawing)
+    dense = demo.dense_times([times[0], times[-1]], 300)
+    dd = _sim_dict(simulate(prog, dense), dense)
+    srt = sorted(errs)
+    # where SAM's track (identity data, independent of the fit) shows the next bounce: lowest point of the box centre
+    observed_bounce = None
+    try:
+        res = load_sam_result(run_dir, run)
+        pts = sorted((i, (r.box[1] + r.box[3]) / 2) for i, r in res.frames_of(rep["sam"]["object_id"]).items() if start <= i < end)
+        for k in range(2, len(pts) - 2):
+            y = pts[k][1]
+            if y >= pts[k - 1][1] and y >= pts[k + 1][1] and y - pts[k - 2][1] > 2 and y - pts[k + 2][1] > 2:
+                fi = pts[k][0]
+                observed_bounce = {"frame": fi, "t_s": float(_frac(next(f["t"] for f in frames if f["frame_index"] == fi))),
+                                   "source": "lowest point of the SAM 3.1 box track"}
+                break
+    except (PipelineError, StopIteration, KeyError):
+        observed_bounce = None
+    pred_next = next((e["t_s"] for e in dd["events"] if e["t_s"] > float(times[0])), None)
+    result = {
+        "kind": "decompile_heldout_prediction", "recon_id": rid, "created_utc": utc_now(),
+        "fitted_window": [rep["clip"]["start_frame"], start - 1], "predicted_window": [start, end - 1],
+        "frames": rows, "dense": dd,
+        "summary": {"n_compared": len(errs), "median_error_px": srt[len(srt) // 2] if srt else None,
+                    "mean_error_px": sum(errs) / len(errs) if errs else None, "max_error_px": max(errs) if errs else None,
+                    "median_diameter_px": rep["measurement"].get("median_diameter_px"),
+                    "predicted_contacts_s": [e["t_s"] for e in dd["events"]][:6],
+                    "predicted_next_bounce_s": pred_next, "observed_next_bounce": observed_bounce,
+                    "first_frames_error_px": [r.get("error_px") for r in rows if r.get("error_px") is not None][:3]},
+        "label": ("Prediction: the program was fitted ONLY to frames "
+                  f"{rep['clip']['start_frame']}-{start - 1}. Frames {start}-{end - 1} were never used by the fit. Their "
+                  "positions are Decompile's own measurements of those frames (not independent ground truth)."),
+    }
+    write_json_atomic(out_path, result)
+    return result
+
+
+def _pre_bounce_errors(h: dict) -> list[float]:
+    nb = h["summary"].get("predicted_next_bounce_s")
+    return [f["error_px"] for f in h["frames"] if f.get("error_px") is not None and (nb is None or f["t_s"] < nb)]
+
+
+def scoreboard(store: RunStore) -> list[dict]:
+    """One row per run: the best reconstruction's fit and held-out prediction, or why the run was refused."""
+    rows = []
+    for run in store.list():
+        row = {"run_id": run["id"], "filename": run["original_filename"], "created_utc": run["created_utc"],
+               "provenance": run["provenance"], "status": None, "reason": None}
+        recs = [r for r in run.get("reconstructions", []) if r.get("status") == "completed"]
+        prog = next((r for r in reversed(recs) if r.get("outcome") == "scene_program"), None)
+        if run["state"] == "rejected":
+            row.update(status="refused", reason="video rejected: " + "; ".join(run.get("rejection_reasons", []))[:200])
+        elif run["sam"]["status"] in ("failed", "interrupted"):
+            row.update(status="refused", reason="SAM tracking failed")
+        elif prog is None:
+            if run.get("reconstructions"):
+                last = run["reconstructions"][-1]
+                why = last.get("error")
+                if not why and last.get("status") == "completed":
+                    try:
+                        why = "; ".join(_read_json(store.run_dir(run["id"]) / "recon" / last["id"] / "web" / "analysis.json")
+                                        ["physics_status"].get("reasons", []))
+                    except (OSError, ValueError, KeyError, TypeError):
+                        why = "no executable scene program"
+                row.update(status="refused", reason=(why or "no executable scene program")[:240])
+            else:
+                row.update(status="pending", reason=run["state"])
+        else:
+            rdir = store.run_dir(run["id"]) / "recon" / prog["id"]
+            rep = _read_json(rdir / "report.json")
+            phys = rep["physics"]
+            rc = rep.get("reconstruction_consistency") or {}
+            row.update(status="decompiled", recon_id=prog["id"], model=phys.get("model"),
+                       restitution=phys.get("restitution"), fit_rms_px=rc.get("rms_px"),
+                       fitted_frames=[rep["clip"]["start_frame"], rep["clip"]["end_frame_exclusive"] - 1],
+                       ball_diameter_cm=(phys.get("implied_ball_diameter_m_if_g_9_81") or 0) * 100 or None,
+                       median_diameter_px=rep["measurement"].get("median_diameter_px"))
+            hp = rdir / "web" / "heldout.json"
+            if hp.is_file():
+                h = _read_json(hp)
+                pre = _pre_bounce_errors(h)
+                ob, pb = h["summary"].get("observed_next_bounce"), h["summary"].get("predicted_next_bounce_s")
+                row["prediction"] = {
+                    "predicted_frames": h["predicted_window"], "n_compared": h["summary"]["n_compared"],
+                    "pre_bounce_error_px": [min(pre), max(pre)] if pre else None,
+                    "median_error_px": h["summary"]["median_error_px"],
+                    "next_bounce_error_ms": abs(pb - ob["t_s"]) * 1000 if (ob and pb) else None,
+                    "observed_bounce_frame": ob["frame"] if ob else None}
+        rows.append(row)
+    return rows

@@ -30,6 +30,8 @@ class Settings:
     # A live (billed) SAM request is impossible unless this is explicitly enabled on the server AND the user
     # confirms the exact plan in the browser.
     live_sam_enabled: bool = field(default_factory=lambda: _env_bool("DECOMPILE_LIVE_SAM", False))
+    # Muse Spark what-if questions (fractions of a cent each, cached per question); on unless disabled.
+    live_spark_enabled: bool = field(default_factory=lambda: _env_bool("DECOMPILE_LIVE_SPARK", True))
     max_upload_bytes: int = field(default_factory=lambda: int(_env_float("DECOMPILE_MAX_UPLOAD_MB", 200) * 1024 * 1024))
     max_sam_cost_usd: float = field(default_factory=lambda: _env_float("DECOMPILE_MAX_SAM_COST_USD", 1.0))
     max_import_bytes: int = 256 * 1024 * 1024
@@ -52,4 +54,5 @@ class Settings:
 
     def public(self) -> dict:
         return {"live_sam_enabled": self.live_sam_enabled, "api_key_configured": self.api_key_configured(),
+                "live_spark_enabled": self.live_spark_enabled,
                 "max_upload_bytes": self.max_upload_bytes, "max_sam_cost_usd": self.max_sam_cost_usd}

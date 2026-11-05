@@ -56,13 +56,20 @@ class ReconIn(BaseModel):
     min_confidence: float = 0.5
 
 
+class AskIn(BaseModel):
+    question: str
+
+
 class CounterfactualIn(BaseModel):
     restitution: float | None = None
     gravity_scale: float | None = None
     extend_s: float = 0.0
+    velocity_scale: float | None = None
+    remove_floor: bool = False
 
 
-def create_app(settings: Settings | None = None, *, sam_client_factory: Callable | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, *, sam_client_factory: Callable | None = None,
+               spark_client_factory: Callable | None = None) -> FastAPI:
     """``sam_client_factory(evidence_dir) -> SamClient``: injected by tests (mock transport). Production uses the
     real client from tools/sam_demo.py, which reads MODEL_API_KEY from the server environment / .env."""
     settings = settings or Settings()
@@ -105,6 +112,8 @@ def create_app(settings: Settings | None = None, *, sam_client_factory: Callable
     @app.get("/api/health")
     def health() -> dict:
         return {"ok": True, "version": WEB_VERSION, **settings.public(),
+                "spark_available": spark_client_factory is not None or (settings.live_spark_enabled and
+                                                                        settings.api_key_configured()),
                 "pricing": {"usd_per_1000_frames": sa.PRICE_USD_PER_1000_FRAMES,
                             "billing_minimum_frames": sa.BILLING_MIN_FRAMES, "source": sa.PRICING_SOURCE},
                 "accepted_extensions": list(pl.ACCEPTED_UPLOAD_EXTENSIONS),
@@ -121,6 +130,10 @@ def create_app(settings: Settings | None = None, *, sam_client_factory: Callable
                    "reconstructions": len(r.get("reconstructions", [])),
                    "has_program": any(x.get("outcome") == "scene_program" for x in r.get("reconstructions", []))}
                 for r in store.list()]
+
+    @app.get("/api/scoreboard")
+    def get_scoreboard() -> list[dict]:
+        return pl.scoreboard(store)
 
     @app.post("/api/runs", status_code=201)
     async def create_run(request: Request, file: UploadFile = File(...), provenance: str = Form("real")) -> dict:
@@ -294,6 +307,10 @@ def create_app(settings: Settings | None = None, *, sam_client_factory: Callable
             return {"reconstruction": rec, "analysis": None}
         return {"reconstruction": rec, "analysis": pl._read_json(a)}
 
+    @app.get("/api/runs/{run_id}/reconstructions/{rid}/source")
+    def get_source(run_id: str, rid: str) -> dict:
+        return pl.program_source_for(_require_dir(run_id), rid)
+
     @app.get("/api/runs/{run_id}/reconstructions/{rid}/perception")
     def get_perception(run_id: str, rid: str) -> dict:
         p = pl.recon_dir(_require_dir(run_id), rid) / "web" / "perception.json"
@@ -312,7 +329,36 @@ def create_app(settings: Settings | None = None, *, sam_client_factory: Callable
     @app.post("/api/runs/{run_id}/reconstructions/{rid}/counterfactuals")
     def make_counterfactual(run_id: str, rid: str, body: CounterfactualIn) -> dict:
         return pl.counterfactual(_require_dir(run_id), rid, restitution=body.restitution,
-                                 gravity_scale=body.gravity_scale, extend_s=body.extend_s)
+                                 gravity_scale=body.gravity_scale, extend_s=body.extend_s,
+                                 velocity_scale=body.velocity_scale, remove_floor=body.remove_floor)
+
+    def _spark_factory(evidence_dir):
+        if spark_client_factory is not None:
+            return spark_client_factory(evidence_dir)
+        from decompile.meta_api import MuseSparkClient
+        return MuseSparkClient(evidence_dir=evidence_dir)
+
+    @app.post("/api/runs/{run_id}/reconstructions/{rid}/ask")
+    def ask(run_id: str, rid: str, body: AskIn) -> dict:
+        d = _require_dir(run_id)
+        if spark_client_factory is None and not (settings.live_spark_enabled and settings.api_key_configured()):
+            raise HTTPException(400, "Muse Spark is not available on this server (no API key, or DECOMPILE_LIVE_SPARK=0).")
+        out = pl.ask_whatif(d, rid, body.question, _spark_factory)
+        store.append_event(run_id, {"type": "ask", "recon_id": rid, "question": out["interpretation"]["question"],
+                                    "supported": out["interpretation"]["supported"]})
+        return out
+
+    @app.post("/api/runs/{run_id}/reconstructions/{rid}/predict")
+    def predict(run_id: str, rid: str) -> dict:
+        return pl.heldout_prediction(_require_dir(run_id), rid)
+
+    @app.post("/api/runs/{run_id}/reconstructions/{rid}/explain")
+    def explain(run_id: str, rid: str) -> dict:
+        d = _require_dir(run_id)
+        cached = pl.recon_dir(d, rid) / "web" / "explain.json"
+        if not cached.is_file() and spark_client_factory is None and not (settings.live_spark_enabled and settings.api_key_configured()):
+            raise HTTPException(400, "Muse Spark is not available on this server.")
+        return pl.explain_fit(d, rid, _spark_factory)
 
     @app.get("/api/runs/{run_id}/reconstructions/{rid}/counterfactuals/{cf_id}")
     def get_cf(run_id: str, rid: str, cf_id: str) -> dict:

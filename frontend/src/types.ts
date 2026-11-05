@@ -151,6 +151,7 @@ export interface Health {
   live_sam_enabled: boolean;
   api_key_configured: boolean;
   max_upload_bytes: number;
+  spark_available?: boolean;
   max_sam_cost_usd: number;
   pricing: { usd_per_1000_frames: number; billing_minimum_frames: number; source: string };
   max_window_frames: number;
@@ -253,12 +254,43 @@ export interface Counterfactual {
   id: string;
   recon_id: string;
   label: string;
-  parameters: { restitution: number | null; gravity_scale: number | null; extend_s: number };
+  parameters: { restitution: number | null; gravity_scale: number | null; extend_s: number; velocity_scale?: number; remove_floor?: boolean };
   fitted_parameters: Record<string, any>;
   counterfactual_parameters: Record<string, any>;
   frames: { frame_index: number[]; fitted: Sim; counterfactual: Sim };
   dense: { fitted: Sim; counterfactual: Sim };
   observed_until_s: number;
+  source?: { display: string; exact: string };
+}
+
+export interface FitReview {
+  headline: string;
+  explanation: string;
+  material_guess: string;
+  plausibility: string;
+  critique: string[];
+  confidence: "high" | "medium" | "low";
+  model: string | null;
+  latency_s: number;
+}
+
+export interface AskResult {
+  interpretation: {
+    question: string;
+    supported: boolean;
+    restitution: number | null;
+    gravity_scale: number | null;
+    velocity_scale?: number | null;
+    remove_floor?: boolean;
+    extend_s: number;
+    headline: string;
+    reasoning: string;
+    assumptions: string[];
+    unsupported_reason: string | null;
+    model: string | null;
+    latency_s: number;
+  };
+  counterfactual: Counterfactual | null;
 }
 
 export interface Artifact {
